@@ -648,6 +648,15 @@ async function handleReturningUserJoin() {
 async function doJoinRoom(roomCode, userName, pin, pinGroup) {
    const res = await callAPI("joinRoom", { roomCode, userName, pin });
    if (res && res.status === "success") {
+      // ── Clear all input fields ONLY after confirmed success ──
+      document.getElementById('user-name-new').value = '';
+      document.getElementById('user-name-returning').value = '';
+      clearPinBoxes('new');
+      clearPinBoxes('returning');
+      hidePinError('new');
+      hidePinError('returning');
+      resetJoinStep(); // returns form to step-1 for next visit
+
       state.roomCode = roomCode;
       state.userName = userName;
       document.getElementById('lobby-room-code').innerText = roomCode;
