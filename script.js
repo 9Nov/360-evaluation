@@ -1,0 +1,921 @@
+// ==========================================
+// 1. ตั้งค่าการเชื่อมต่อ (สำคัญ!)
+// ==========================================
+// ให้นำ URL ที่ได้จากขั้นตอน Deploy as Web App ของ Google Apps Script มาใส่ในเครื่องหมายคำพูดด้านล่าง
+const API_URL = "https://script.google.com/macros/s/AKfycbzsDGa-GrPvUFMFpm5THmS227GxauSU8C09x4OZqfm_PfNH92C3TN9mFU3a7jjXcTGtyw/exec";
+
+// ==========================================
+// 2. ข้อมูลระบบและ State
+// ==========================================
+const evaluationCriteria = [
+   { id: 'q1', title: '1. Teamwork & Collaboration', desc: 'ความสามารถในการทำงานร่วมกับผู้อื่น และการช่วยเหลือสนับสนุนเพื่อนร่วมทีม' },
+   { id: 'q2', title: '2. Responsibility & Reliability', desc: 'ความรับผิดชอบต่อหน้าที่ที่ได้รับมอบหมาย และความตรงต่อเวลา' },
+   { id: 'q3', title: '3. Problem Solving', desc: 'ทัศนคติและการจัดการเมื่อเจออุปสรรคหรือปัญหาในงาน' },
+   { id: 'q4', title: '4. Communication Skills', desc: 'การสื่อสารข้อมูลที่ชัดเจน สุภาพ และมีประสิทธิภาพ' },
+   { id: 'q5', title: '5. Positive Attitude & Growth', desc: 'การเปิดรับความคิดเห็น (Feedback) และการสร้างพลังบวกในที่ทำงาน' }
+];
+
+let state = {
+   roomCode: null,
+   userName: null,
+   usersInRoom: [],
+   evaluations: [],
+   targetEvaluatee: null,
+   currentScores: [0, 0, 0, 0, 0] // 5 ข้อ
+};
+
+// ==========================================
+// 3. UI Navigation & Loading
+// ==========================================
+
+// Fixed back-navigation map. null = computed dynamically in getBackTarget()
+const BACK_TARGETS = {
+   'sec-admin-login'     : 'sec-landing',
+   'sec-admin-dashboard' : 'sec-landing',
+   'sec-user-join'       : 'sec-landing',
+   'sec-eval-form'       : 'sec-user-lobby',
+   'sec-result'          : null,   // depends on whether Admin or User
+};
+
+function getBackTarget() {
+   const all = ['sec-landing','sec-admin-login','sec-admin-dashboard','sec-user-join','sec-user-lobby','sec-eval-form','sec-result'];
+   const current = all.find(id => !document.getElementById(id).classList.contains('hidden-section'));
+   if (!current || current === 'sec-landing') return null;
+   if (current === 'sec-result') return (state.userName === 'Admin') ? 'sec-admin-dashboard' : 'sec-user-lobby';
+   return BACK_TARGETS[current] ?? null;
+}
+
+function goBack() {
+   const target = getBackTarget();
+   if (target) showSection(target);
+}
+
+function updateHeaderButtons(sectionId) {
+   const isLanding = (sectionId === 'sec-landing');
+   document.getElementById('btn-home').classList.toggle('hidden', isLanding);
+   // Show back button only for sections that have a defined back target
+   // (evaluate after the section switch so getBackTarget reads the new DOM state)
+   const hasBack = !isLanding && BACK_TARGETS.hasOwnProperty(sectionId);
+   document.getElementById('btn-back').classList.toggle('hidden', !hasBack);
+}
+
+function showSection(sectionId) {
+   const sections = ['sec-landing', 'sec-admin-login', 'sec-admin-dashboard', 'sec-user-join', 'sec-user-lobby', 'sec-eval-form', 'sec-result'];
+   sections.forEach(id => {
+      document.getElementById(id).classList.add('hidden-section');
+   });
+   document.getElementById(sectionId).classList.remove('hidden-section');
+   updateHeaderButtons(sectionId);
+
+   if (sectionId === 'sec-admin-dashboard') {
+      renderRoomHistory();
+   }
+}
+
+function goHome() {
+   state.roomCode = null;
+   state.userName = null;
+   showSection('sec-landing');
+}
+
+function showLoader(show = true) {
+   if (show) {
+      document.getElementById('loader').classList.remove('hidden-section');
+   } else {
+      document.getElementById('loader').classList.add('hidden-section');
+   }
+}
+
+// ==========================================
+// 4. API Call Helper
+// ==========================================
+async function callAPI(action, payload) {
+   if (!API_URL) {
+      alert("ระบบยังไม่สามารถใช้งานได้ กรุณานำ URL ของ Google Apps Script มาใส่ในไฟล์ script.js บรรทัดที่ 6 ก่อนครับ");
+      return null;
+   }
+
+   showLoader(true);
+   try {
+      const response = await fetch(API_URL, {
+         method: 'POST',
+         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+         body: JSON.stringify({ action, ...payload }),
+         redirect: 'follow'
+      });
+      const result = await response.json();
+      return result;
+   } catch (err) {
+      console.error("API Error:", err);
+      alert("เกิดข้อผิดพลาดในการเชื่อมต่อเครือข่าย โปรดลองอีกครั้ง");
+      return null;
+   } finally {
+      showLoader(false);
+   }
+}
+
+// ==========================================
+// 5. Admin Logic
+// ==========================================
+function handleAdminLogin(e) {
+   e.preventDefault();
+   const pass = document.getElementById('admin-pass').value;
+   if (pass === "loading99") {
+      document.getElementById('admin-error').classList.add('hidden');
+      document.getElementById('admin-pass').value = '';
+      showSection('sec-admin-dashboard');
+   } else {
+      document.getElementById('admin-error').classList.remove('hidden');
+   }
+}
+
+async function createRoom() {
+   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+   let randCode = '';
+   for (let i = 0; i < 5; i++) randCode += chars.charAt(Math.floor(Math.random() * chars.length));
+
+   const res = await callAPI("createRoom", { roomCode: randCode });
+   if (res && res.status === "success") {
+      state.roomCode = randCode;
+      document.getElementById('display-room-code').innerText = randCode;
+      document.getElementById('admin-room-info').classList.remove('hidden');
+      document.getElementById('admin-users-panel').classList.add('hidden');
+      saveRoomToHistory(randCode);
+      renderRoomHistory();
+   }
+}
+
+function copyRoomCode() {
+   navigator.clipboard.writeText(state.roomCode);
+   alert("คัดลอกรหัสห้องแล้ว!");
+}
+
+async function adminViewResult() {
+   if (!state.roomCode) return;
+   // Admin ใช้ชื่อจำลองเพื่อเข้าไปดูผล
+   state.userName = "Admin";
+   await fetchRoomData();
+   showSection('sec-result');
+   calculateResults();
+}
+
+async function testMode() {
+   if (!state.roomCode) { alert("กรุณาสร้างห้องก่อน"); return; }
+
+   if (!confirm("ระบบจะสุ่มชื่อคนและผลคะแนนใส่เข้าไปในห้องนี้ เพื่อทดสอบระบบ คุณต้องการทำต่อหรือไม่? (ใช้เวลาสักครู่)")) return;
+
+   showLoader(true);
+   const dummyUsers = ["สมชาย", "วิภาดา", "ธนพล"];
+
+   // 1. เอาดัมมี่จอยเข้าห้องทีละคน
+   for (let u of dummyUsers) {
+      await fetch(API_URL, {
+         method: 'POST',
+         body: JSON.stringify({ action: "joinRoom", roomCode: state.roomCode, userName: u })
+      });
+   }
+
+   // 2. ให้แต่ละคนประเมินเพื่อน
+   for (let evaluator of dummyUsers) {
+      for (let evaluatee of dummyUsers) {
+         if (evaluator === evaluatee) continue;
+         const s1 = Math.floor(Math.random() * 3) + 3; // 3-5
+         const s2 = Math.floor(Math.random() * 3) + 3;
+         const s3 = Math.floor(Math.random() * 3) + 3;
+         const s4 = Math.floor(Math.random() * 3) + 3;
+         const s5 = Math.floor(Math.random() * 3) + 3;
+         await fetch(API_URL, {
+            method: 'POST',
+            body: JSON.stringify({
+               action: "submitEvaluation",
+               roomCode: state.roomCode,
+               evaluator: evaluator,
+               evaluatee: evaluatee,
+               scores: [s1, s2, s3, s4, s5]
+            })
+         });
+      }
+   }
+   showLoader(false);
+   alert("จำลองข้อมูลเรียบร้อย! สามารถกดดูผลสรุปห้องนี้ได้เลย");
+}
+
+// ==========================================
+// 6. Room History (localStorage)
+// ==========================================
+function saveRoomToHistory(code) {
+   let history = JSON.parse(localStorage.getItem('roomHistory') || '[]');
+   history = history.filter(r => r.code !== code);
+   history.unshift({ code, createdAt: new Date().toLocaleString('th-TH') });
+   if (history.length > 10) history = history.slice(0, 10);
+   localStorage.setItem('roomHistory', JSON.stringify(history));
+}
+
+function renderRoomHistory() {
+   const history = JSON.parse(localStorage.getItem('roomHistory') || '[]');
+   const container = document.getElementById('room-history-list');
+   if (!container) return;
+   if (history.length === 0) {
+      container.innerHTML = '<p class="text-gray-400 text-sm text-center py-4">ยังไม่มีประวัติห้อง</p>';
+      return;
+   }
+   container.innerHTML = history.map(r => `
+      <div class="flex items-center justify-between bg-gray-50 border border-gray-100 rounded-lg p-3 hover:bg-blue-50 transition">
+         <div>
+            <span class="font-black text-blue-900 tracking-wider text-lg">${r.code}</span>
+            <p class="text-xs text-gray-400 mt-0.5">${r.createdAt}</p>
+         </div>
+         <button onclick="revisitRoom('${r.code}')" class="text-sm bg-blue-100 text-blue-700 hover:bg-blue-200 px-3 py-1.5 rounded-lg font-semibold transition">
+            <i class="fa-solid fa-arrow-right mr-1"></i> เข้าห้องนี้
+         </button>
+      </div>
+   `).join('');
+}
+
+function revisitRoom(code) {
+   state.roomCode = code;
+   document.getElementById('display-room-code').innerText = code;
+   document.getElementById('admin-room-info').classList.remove('hidden');
+   document.getElementById('admin-users-panel').classList.add('hidden');
+   window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ==========================================
+// 7. Admin User Management
+// ==========================================
+function toggleAdminUsers() {
+   const panel = document.getElementById('admin-users-panel');
+   if (panel.classList.contains('hidden')) {
+      panel.classList.remove('hidden');
+      refreshAdminUsers();
+   } else {
+      panel.classList.add('hidden');
+   }
+}
+
+async function refreshAdminUsers() {
+   if (!state.roomCode) return;
+   const res = await callAPI("getRoomData", { roomCode: state.roomCode });
+   if (res && res.status === "success") {
+      renderAdminUserList(res.users);
+   }
+}
+
+function renderAdminUserList(users) {
+   const container = document.getElementById('admin-users-list');
+   container.innerHTML = '';
+
+   if (!users || users.length === 0) {
+      container.innerHTML = '<p class="text-gray-400 text-sm text-center py-4">ยังไม่มีผู้เข้าร่วมในห้องนี้</p>';
+      return;
+   }
+
+   users.forEach(userName => {
+      // Build each row as a real DOM element to avoid onclick string-escaping bugs
+      const row = document.createElement('div');
+      row.className = 'flex items-center justify-between bg-white border border-gray-100 rounded-lg p-3 shadow-sm';
+
+      // Left: avatar + name
+      const left = document.createElement('div');
+      left.className = 'flex items-center gap-2';
+      left.innerHTML = `
+         <div class="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-600">
+            <i class="fa-solid fa-user text-sm"></i>
+         </div>
+         <span class="font-semibold text-gray-800">${userName}</span>`;
+
+      // Right: delete button (listener attached — no inline onclick)
+      const btn = document.createElement('button');
+      btn.className = 'text-sm bg-red-50 text-red-600 hover:bg-red-100 px-3 py-1.5 rounded-lg font-medium transition';
+      btn.innerHTML = '<i class="fa-solid fa-trash mr-1"></i> ลบ';
+      btn.addEventListener('click', () => adminDeleteUser(userName));
+
+      row.appendChild(left);
+      row.appendChild(btn);
+      container.appendChild(row);
+   });
+}
+
+async function adminDeleteUser(userName) {
+   if (!confirm(`ยืนยันการลบ "${userName}" ออกจากห้องนี้?`)) return;
+
+   const res = await callAPI("deleteUser", { roomCode: state.roomCode, userName });
+
+   if (res && res.status === "success") {
+      await refreshAdminUsers();
+      // Verify the user is actually gone (backend may not have deleteUser deployed yet)
+      const stillExists = state.usersInRoom
+         ? false  // don't use lobby state; read the fresh admin list
+         : false;
+      // Check the freshly-rendered list
+      const allNames = Array.from(
+         document.querySelectorAll('#admin-users-list .font-semibold')
+      ).map(el => el.textContent.trim());
+      if (allNames.includes(userName)) {
+         alert(`⚠️ ไม่สามารถลบ "${userName}" ได้\nกรุณา Deploy Google Apps Script (code.gs) เวอร์ชันใหม่ก่อนใช้งานฟีเจอร์นี้`);
+      }
+   } else if (res && res.status === "error") {
+      alert(`เกิดข้อผิดพลาด: ${res.message}`);
+   }
+}
+
+// ==========================================
+// 8. Evaluation Status Monitor
+// ==========================================
+function toggleEvalMonitor() {
+   const panel = document.getElementById('admin-eval-monitor');
+   if (panel.classList.contains('hidden')) {
+      panel.classList.remove('hidden');
+      refreshEvalMonitor();
+   } else {
+      panel.classList.add('hidden');
+   }
+}
+
+async function refreshEvalMonitor() {
+   if (!state.roomCode) return;
+   const res = await callAPI("getRoomData", { roomCode: state.roomCode });
+   if (res && res.status === "success") {
+      renderEvalMonitor(res.users || [], res.evaluations || []);
+   }
+}
+
+function renderEvalMonitor(users, evaluations) {
+   // Build lookup set: "evaluator||evaluatee" → true
+   const doneSet = new Set(evaluations.map(e => `${e.evaluator}||${e.evaluatee}`));
+
+   const n            = users.length;
+   const totalPossible = n * (n - 1);
+   const completed    = [...doneSet].filter(key => {
+      const [ev, ee] = key.split('||');
+      return users.includes(ev) && users.includes(ee);
+   }).length;
+   const remaining    = totalPossible - completed;
+   const pct          = totalPossible > 0 ? Math.round((completed / totalPossible) * 100) : 0;
+
+   renderEvalSummary(n, completed, remaining, totalPossible, pct);
+   renderEvalMatrix(users, doneSet);
+   renderPendingList(users, doneSet);
+}
+
+function renderEvalSummary(userCount, completed, remaining, total, pct) {
+   const barColor = pct === 100 ? 'bg-green-500' : pct >= 50 ? 'bg-blue-500' : 'bg-orange-400';
+   document.getElementById('eval-monitor-summary').innerHTML = `
+      <div class="grid grid-cols-3 gap-3 mb-4">
+         <div class="bg-blue-50 rounded-xl p-3 text-center">
+            <div class="text-2xl font-black text-blue-900">${userCount}</div>
+            <div class="text-xs text-blue-600 mt-1">ผู้เข้าร่วม</div>
+         </div>
+         <div class="bg-green-50 rounded-xl p-3 text-center">
+            <div class="text-2xl font-black text-green-700">${completed}</div>
+            <div class="text-xs text-green-600 mt-1">ประเมินแล้ว</div>
+         </div>
+         <div class="bg-red-50 rounded-xl p-3 text-center">
+            <div class="text-2xl font-black text-red-600">${remaining}</div>
+            <div class="text-xs text-red-500 mt-1">ยังไม่ได้ประเมิน</div>
+         </div>
+      </div>
+      <div class="flex justify-between text-sm text-gray-600 mb-1">
+         <span class="font-medium">ความคืบหน้าทั้งหมด</span>
+         <span class="font-bold">${completed} / ${total} &nbsp;(${pct}%)</span>
+      </div>
+      <div class="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+         <div class="h-3 rounded-full transition-all duration-700 ${barColor}"
+              style="width:${pct}%"></div>
+      </div>`;
+}
+
+function renderEvalMatrix(users, doneSet) {
+   if (users.length === 0) {
+      document.getElementById('eval-monitor-matrix').innerHTML = '';
+      return;
+   }
+
+   let html = `
+      <p class="text-xs text-gray-500 mt-5 mb-2">
+         <i class="fa-solid fa-table-cells mr-1 text-gray-400"></i>
+         <strong>แถว</strong> = ผู้ประเมิน &nbsp;|&nbsp; <strong>คอลัมน์</strong> = ผู้ถูกประเมิน
+      </p>
+      <div class="overflow-x-auto rounded-xl border border-gray-200 shadow-sm">
+        <table class="text-sm border-collapse min-w-max w-full">
+          <thead>
+            <tr class="bg-gray-50 border-b border-gray-200">
+              <th class="px-3 py-2 text-left text-xs font-semibold text-gray-400 border-r border-gray-200 sticky left-0 bg-gray-50 z-10 min-w-[100px]">
+                ผู้ประเมิน ╲ ถูกประเมิน
+              </th>`;
+
+   users.forEach(u => {
+      const label = u.length > 9 ? u.slice(0, 8) + '…' : u;
+      html += `<th class="px-3 py-2 text-center text-xs font-semibold text-gray-600 min-w-[64px]" title="${u}">${label}</th>`;
+   });
+
+   html += `</tr></thead><tbody>`;
+
+   users.forEach(evaluator => {
+      html += `<tr class="border-b border-gray-100 hover:bg-teal-50 transition">`;
+      html += `<td class="px-3 py-2 text-xs font-semibold text-gray-700 border-r border-gray-200 sticky left-0 bg-white z-10 whitespace-nowrap">${evaluator}</td>`;
+
+      users.forEach(evaluatee => {
+         if (evaluator === evaluatee) {
+            html += `<td class="px-3 py-2 text-center bg-gray-100 text-gray-300 select-none">—</td>`;
+         } else {
+            const done = doneSet.has(`${evaluator}||${evaluatee}`);
+            html += `<td class="px-3 py-2 text-center text-base">${done ? '✅' : '❌'}</td>`;
+         }
+      });
+
+      html += `</tr>`;
+   });
+
+   html += `</tbody></table></div>`;
+   document.getElementById('eval-monitor-matrix').innerHTML = html;
+}
+
+function renderPendingList(users, doneSet) {
+   const pending = [];
+   users.forEach(evaluator => {
+      users.forEach(evaluatee => {
+         if (evaluator !== evaluatee && !doneSet.has(`${evaluator}||${evaluatee}`)) {
+            pending.push({ evaluator, evaluatee });
+         }
+      });
+   });
+
+   const container = document.getElementById('eval-monitor-pending');
+
+   if (pending.length === 0) {
+      container.innerHTML = `
+         <div class="mt-5 bg-green-50 border border-green-200 rounded-xl p-5 text-center">
+            <i class="fa-solid fa-circle-check text-green-500 text-3xl mb-2"></i>
+            <p class="text-green-700 font-bold">ทุกคนประเมินครบแล้ว! 🎉</p>
+            <p class="text-green-600 text-sm mt-1">พร้อมดูผลสรุปได้เลย</p>
+         </div>`;
+      return;
+   }
+
+   container.innerHTML = `
+      <div class="flex items-center justify-between mt-5 mb-2">
+         <h5 class="text-sm font-semibold text-gray-700">
+            <i class="fa-solid fa-hourglass-half text-orange-400 mr-1"></i>
+            รายการที่ยังไม่ได้ประเมิน
+         </h5>
+         <span class="text-xs font-bold bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full">${pending.length} รายการ</span>
+      </div>
+      <div class="space-y-2 max-h-52 overflow-y-auto pr-1">
+         ${pending.map(p => `
+            <div class="flex items-center gap-2 bg-orange-50 border border-orange-100 rounded-lg px-3 py-2 text-sm">
+               <span class="font-semibold text-gray-800 truncate">${p.evaluator}</span>
+               <i class="fa-solid fa-arrow-right text-orange-400 text-xs flex-shrink-0"></i>
+               <span class="font-semibold text-gray-800 truncate">${p.evaluatee}</span>
+               <span class="ml-auto flex-shrink-0 text-xs text-orange-400 font-medium">ยังไม่ได้ประเมิน</span>
+            </div>`).join('')}
+      </div>`;
+}
+
+// ==========================================
+// 9. PIN Input Helpers
+// ==========================================
+function setupPinBoxes() {
+   document.querySelectorAll('.pin-box').forEach(input => {
+      // Only accept single digit
+      input.addEventListener('input', (e) => {
+         const val = e.target.value;
+         if (!/^\d$/.test(val)) { e.target.value = ''; return; }
+         e.target.classList.add('filled');
+         // Auto-advance to next box
+         const group = e.target.dataset.group;
+         const idx   = parseInt(e.target.dataset.index);
+         const next  = document.querySelector(`.pin-box[data-group="${group}"][data-index="${idx + 1}"]`);
+         if (next) next.focus();
+      });
+
+      // Backspace: clear current or move to previous
+      input.addEventListener('keydown', (e) => {
+         if (e.key === 'Backspace') {
+            if (e.target.value) {
+               e.target.value = '';
+               e.target.classList.remove('filled');
+            } else {
+               const group = e.target.dataset.group;
+               const idx   = parseInt(e.target.dataset.index);
+               const prev  = document.querySelector(`.pin-box[data-group="${group}"][data-index="${idx - 1}"]`);
+               if (prev) { prev.value = ''; prev.classList.remove('filled'); prev.focus(); }
+            }
+         }
+      });
+
+      // Prevent non-numeric keys
+      input.addEventListener('keypress', (e) => {
+         if (!/\d/.test(e.key)) e.preventDefault();
+      });
+   });
+}
+
+function getPinValue(group) {
+   return Array.from(document.querySelectorAll(`.pin-box[data-group="${group}"]`))
+      .map(el => el.value)
+      .join('');
+}
+
+function clearPinBoxes(group) {
+   document.querySelectorAll(`.pin-box[data-group="${group}"]`).forEach(el => {
+      el.value = '';
+      el.classList.remove('filled', 'error');
+   });
+}
+
+function shakePinBoxes(group) {
+   document.querySelectorAll(`.pin-box[data-group="${group}"]`).forEach(el => {
+      el.classList.add('error');
+      setTimeout(() => el.classList.remove('error'), 400);
+   });
+   setTimeout(() => clearPinBoxes(group), 400);
+   const first = document.querySelector(`.pin-box[data-group="${group}"][data-index="0"]`);
+   if (first) setTimeout(() => first.focus(), 420);
+}
+
+// ==========================================
+// 10. User Logic (Two-Step Join, Lobby, Form)
+// ==========================================
+let roomUsersCache = [];
+
+async function lookupRoomUsers() {
+   const code = document.getElementById('user-room-code').value.toUpperCase().trim();
+   if (code.length !== 5) { alert("กรุณากรอกรหัสห้อง 5 หลัก"); return; }
+
+   const res = await callAPI("getRoomData", { roomCode: code });
+   if (res && res.status === "error") { alert(res.message); return; }
+   if (res && res.status === "success") {
+      if (res.roomExists === false) { alert("ไม่พบรหัสห้องนี้ในระบบ โปรดตรวจสอบอีกครั้ง"); return; }
+      roomUsersCache = res.users || [];
+      document.getElementById('join-room-display').innerText = code;
+      document.getElementById('join-step-1').classList.add('hidden');
+      document.getElementById('join-step-2').classList.remove('hidden');
+      switchJoinTab('new');
+      renderReturningUsers();
+   }
+}
+
+function resetJoinStep() {
+   document.getElementById('join-step-1').classList.remove('hidden');
+   document.getElementById('join-step-2').classList.add('hidden');
+   document.getElementById('user-room-code').value = '';
+   document.getElementById('user-name-new').value = '';
+   document.getElementById('user-name-returning').value = '';
+   clearPinBoxes('new');
+   clearPinBoxes('returning');
+   hidePinError('new');
+   hidePinError('returning');
+   roomUsersCache = [];
+}
+
+function switchJoinTab(tab) {
+   const isNew = tab === 'new';
+   document.getElementById('panel-new-user').classList.toggle('hidden', !isNew);
+   document.getElementById('panel-returning-user').classList.toggle('hidden', isNew);
+   document.getElementById('tab-btn-new').className      = `flex-1 py-2.5 text-sm font-semibold transition ${isNew  ? 'bg-blue-600 text-white' : 'bg-white text-gray-500'}`;
+   document.getElementById('tab-btn-returning').className = `flex-1 py-2.5 text-sm font-semibold transition ${!isNew ? 'bg-blue-600 text-white' : 'bg-white text-gray-500'}`;
+}
+
+function renderReturningUsers() {
+   const container = document.getElementById('returning-users-list');
+   if (roomUsersCache.length === 0) {
+      container.innerHTML = '<p class="text-gray-400 text-sm text-center py-3">ไม่พบรายชื่อผู้เคยเข้าร่วมในห้องนี้</p>';
+      return;
+   }
+   container.innerHTML = roomUsersCache.map(u => `
+      <button onclick="selectReturningUser('${u.replace(/'/g, "\\'")}')"
+        class="w-full text-left flex items-center gap-3 bg-white border border-gray-200 rounded-xl p-3 hover:bg-blue-50 hover:border-blue-300 transition shadow-sm">
+         <div class="w-9 h-9 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 flex-shrink-0">
+            <i class="fa-solid fa-user text-sm"></i>
+         </div>
+         <span class="font-semibold text-gray-800">${u}</span>
+         <i class="fa-solid fa-chevron-right ml-auto text-gray-400 text-xs"></i>
+      </button>
+   `).join('');
+}
+
+// Select from list → fill name, focus first PIN box (do NOT auto-submit)
+function selectReturningUser(name) {
+   document.getElementById('user-name-returning').value = name;
+   clearPinBoxes('returning');
+   hidePinError('returning');
+   const first = document.querySelector('.pin-box[data-group="returning"][data-index="0"]');
+   if (first) first.focus();
+}
+
+function showPinError(group, msg) {
+   const el = document.getElementById(`pin-${group}-error`);
+   if (!el) return;
+   if (msg) el.textContent = msg;
+   el.classList.remove('hidden');
+}
+function hidePinError(group) {
+   const el = document.getElementById(`pin-${group}-error`);
+   if (el) el.classList.add('hidden');
+}
+
+async function handleNewUserJoin() {
+   const roomCode = document.getElementById('join-room-display').innerText.toUpperCase();
+   const userName = document.getElementById('user-name-new').value.trim();
+   const pin      = getPinValue('new');
+
+   if (!userName) { alert("กรุณากรอกชื่อของคุณ"); return; }
+   if (pin.length !== 4) {
+      showPinError('new');
+      shakePinBoxes('new');
+      return;
+   }
+   hidePinError('new');
+   await doJoinRoom(roomCode, userName, pin, 'new');
+}
+
+async function handleReturningUserJoin() {
+   const roomCode = document.getElementById('join-room-display').innerText.toUpperCase();
+   const userName = document.getElementById('user-name-returning').value.trim();
+   const pin      = getPinValue('returning');
+
+   if (!userName) { alert("กรุณากรอกหรือเลือกชื่อของคุณ"); return; }
+   if (pin.length !== 4) {
+      showPinError('returning', 'กรุณากรอก PIN ให้ครบ 4 หลัก');
+      shakePinBoxes('returning');
+      return;
+   }
+   hidePinError('returning');
+   await doJoinRoom(roomCode, userName, pin, 'returning');
+}
+
+async function doJoinRoom(roomCode, userName, pin, pinGroup) {
+   const res = await callAPI("joinRoom", { roomCode, userName, pin });
+   if (res && res.status === "success") {
+      state.roomCode = roomCode;
+      state.userName = userName;
+      document.getElementById('lobby-room-code').innerText = roomCode;
+      document.getElementById('lobby-user-name').innerText = "คุณ " + userName;
+      await fetchRoomData();
+      showSection('sec-user-lobby');
+   } else if (res && res.status === "error") {
+      // PIN-specific error: shake the correct box group
+      if (res.message && res.message.includes("PIN") && pinGroup) {
+         showPinError(pinGroup, res.message);
+         shakePinBoxes(pinGroup);
+      } else {
+         alert(res.message);
+      }
+   }
+}
+
+async function fetchRoomData() {
+   const res = await callAPI("getRoomData", { roomCode: state.roomCode });
+   if (res && res.status === "success") {
+      state.usersInRoom = res.users;
+      state.evaluations = res.evaluations;
+      if (state.userName && state.userName !== "Admin") renderLobby();
+   }
+}
+
+async function refreshLobby() {
+   await fetchRoomData();
+}
+
+function renderLobby() {
+   const container = document.getElementById('lobby-users-container');
+   container.innerHTML = '';
+
+   // ไม่รวมชื่อตัวเองในรายชื่อ
+   const peers = state.usersInRoom.filter(u => u !== state.userName);
+   document.getElementById('lobby-count').innerText = state.usersInRoom.length;
+
+   if (peers.length === 0) {
+      container.innerHTML = `<p class="text-gray-500 text-center py-6">ยังไม่มีผู้เข้าร่วมคนอื่นในห้องนี้</p>`;
+      return;
+   }
+
+   let allEvaluated = true;
+
+   peers.forEach(peer => {
+      // เช็คว่าเราเคยประเมินคนนี้ใน room นี้หรือยัง
+      const hasEvaluated = state.evaluations.some(e => e.evaluator === state.userName && e.evaluatee === peer);
+      if (!hasEvaluated) allEvaluated = false;
+
+      const el = document.createElement('div');
+      el.className = `user-card glass-card p-4 flex justify-between items-center ${hasEvaluated ? 'evaluated' : ''}`;
+
+      el.innerHTML = `
+         <div class="flex items-center gap-3">
+           <div class="bg-blue-100 p-2 rounded-full user-card-icon w-10 h-10 flex items-center justify-center">
+              <i class="fa-solid ${hasEvaluated ? 'fa-check text-green-500' : 'fa-user'}"></i>
+           </div>
+           <p class="font-semibold text-gray-800">${peer}</p>
+         </div>
+         <button class="${hasEvaluated ? 'bg-green-100 text-green-700' : 'btn-primary px-4 py-2 text-sm text-white'} rounded shadow" 
+                 ${hasEvaluated ? 'disabled' : `onclick="openEvaluationForm('${peer}')"`}>
+            ${hasEvaluated ? 'ประเมินแล้ว' : 'ทำการประเมิน'}
+         </button>
+      `;
+      container.appendChild(el);
+   });
+
+   if (allEvaluated && peers.length > 0) {
+      document.getElementById('btn-final-submit').classList.remove('hidden');
+   } else {
+      document.getElementById('btn-final-submit').classList.add('hidden');
+   }
+}
+
+// ==========================================
+// 11. Evaluation Logic
+// ==========================================
+function openEvaluationForm(peerName) {
+   state.targetEvaluatee = peerName;
+   state.currentScores = [0, 0, 0, 0, 0];
+   document.getElementById('eval-target-name').innerText = peerName;
+   document.getElementById('btn-submit-eval').disabled = true;
+   document.getElementById('btn-submit-eval').classList.add('opacity-50', 'cursor-not-allowed');
+
+   renderQuestions();
+   showSection('sec-eval-form');
+}
+
+function renderQuestions() {
+   const container = document.getElementById('eval-questions-container');
+   container.innerHTML = '';
+
+   evaluationCriteria.forEach((crit, index) => {
+      let div = document.createElement('div');
+      div.className = "mb-6 pb-6 border-b border-gray-100 last:border-0";
+
+      let html = `<h4 class="font-bold text-gray-800">${crit.title}</h4>
+                  <p class="text-sm text-gray-500 mb-3">${crit.desc}</p>
+                  <div class="flex justify-between max-w-sm mx-auto">`;
+      // สร้างปุ่มเรตติ้ง 1-5
+      for (let i = 1; i <= 5; i++) {
+         const isActive = state.currentScores[index] === i ? 'active' : '';
+         html += `<div class="rating-btn ${isActive}" onclick="setScore(${index}, ${i})">${i}</div>`;
+      }
+      html += `</div>`;
+      div.innerHTML = html;
+      container.appendChild(div);
+   });
+}
+
+function setScore(qIndex, score) {
+   state.currentScores[qIndex] = score;
+   renderQuestions(); // Re-render for active classes
+   checkAllScores();
+}
+
+function checkAllScores() {
+   const allFilled = state.currentScores.every(s => s > 0);
+   const btn = document.getElementById('btn-submit-eval');
+   if (allFilled) {
+      btn.disabled = false;
+      btn.classList.remove('opacity-50', 'cursor-not-allowed');
+   } else {
+      btn.disabled = true;
+      btn.classList.add('opacity-50', 'cursor-not-allowed');
+   }
+}
+
+async function submitEvaluation(e) {
+   e.preventDefault();
+   const res = await callAPI("submitEvaluation", {
+      roomCode: state.roomCode,
+      evaluator: state.userName,
+      evaluatee: state.targetEvaluatee,
+      scores: state.currentScores
+   });
+
+   if (res && res.status === "success") {
+      // กลับไปล็อบบี้แล้วเรนเดอร์ใหม่
+      await fetchRoomData();
+      showSection('sec-user-lobby');
+   }
+}
+
+// ==========================================
+// 12. Result Summary & Ranking Logic
+// ==========================================
+async function showResultSummary() {
+   showSection('sec-result');
+   await fetchRoomData();
+   calculateResults();
+}
+
+function calculateResults() {
+   // กรองเฉพาะอันที่มีคนประเมินเรา
+   const myEvals = state.evaluations.filter(e => e.evaluatee === state.userName);
+   document.getElementById('result-user-name').innerText = "คุณ " + state.userName;
+
+   // ถ้าเป็น Admin เข้ามาดูเฉยๆ ปรับชื่อเป็นภาพรวม
+   if (state.userName === "Admin") {
+      document.getElementById('result-user-name').innerText = "Admin View";
+   }
+
+   document.getElementById('result-loading').classList.add('hidden');
+   document.getElementById('result-content').classList.remove('hidden');
+
+   // หากไม่มีใครประเมินเราเลย ไม่ว่าจะกรณีไหนก็ตาม
+   if (myEvals.length === 0 && state.userName !== "Admin") {
+      document.getElementById('result-total-score').innerText = "0";
+      document.getElementById('result-avg-container').innerHTML = `<p class="col-span-2 text-center text-gray-500 py-6">ยังไม่มีคะแนนประเมินของคุณ</p>`;
+      calculateRanking(); // ทำ Ranking ล่างสุดต่อเผื่อมีของคนอื่น
+      return;
+   }
+
+   let totalScoreAll = 0;
+   const avgContainer = document.getElementById('result-avg-container');
+   avgContainer.innerHTML = '';
+
+   if (state.userName !== "Admin") {
+      // คำนวณคะแนนของตัวเอง
+      for (let q = 0; q < 5; q++) {
+         let sum = 0;
+         myEvals.forEach(ev => sum += ev.scores[q]);
+         let avg = (sum / myEvals.length).toFixed(2);
+         totalScoreAll += sum;
+
+         avgContainer.innerHTML += `
+             <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
+                <div>
+                  <h4 class="font-bold text-gray-800 text-sm truncate">${evaluationCriteria[q].title.split('. ')[1]}</h4>
+                </div>
+                <div class="bg-blue-50 text-blue-800 font-bold px-3 py-1 rounded-lg">
+                  ${avg} <span class="text-xs text-blue-400 font-normal">/ 5</span>
+                </div>
+             </div>
+          `;
+      }
+      document.getElementById('result-total-score').innerText = totalScoreAll;
+      document.getElementById('result-max-score').innerText = (myEvals.length * 25); // เต็มคือคนประเมิน x 25
+   } else {
+      // Admin view (Hide My Score section to save space)
+      document.querySelector('#result-content > div.bg-gradient-to-r').style.display = 'none';
+      document.querySelector('#result-content > h3').style.display = 'none';
+      avgContainer.style.display = 'none';
+   }
+
+   // ------------------ Calculate Ranking ------------------
+   calculateRanking();
+}
+
+// ==========================================
+// 13. Initialisation
+// ==========================================
+document.addEventListener('DOMContentLoaded', () => {
+   setupPinBoxes();
+});
+
+function calculateRanking() {
+   // หายอดรวมของแต่ละคนในห้อง
+   let scoresMap = {};
+   state.usersInRoom.forEach(u => {
+      // ไม่จัดอันดับ Admin และข้ามชื่อเปล่าๆ
+      if (u !== "Admin") scoresMap[u] = { total: 0, count: 0 };
+   });
+
+   state.evaluations.forEach(ev => {
+      if (scoresMap[ev.evaluatee]) {
+         let theSum = ev.scores.reduce((a, b) => a + Number(b), 0);
+         scoresMap[ev.evaluatee].total += theSum;
+         scoresMap[ev.evaluatee].count += 1;
+      }
+   });
+
+   let rankingList = [];
+   for (let person in scoresMap) {
+      rankingList.push({ name: person, score: scoresMap[person].total });
+   }
+
+   // เรียงจากมากไปน้อย
+   rankingList.sort((a, b) => b.score - a.score);
+
+   // เอาแค่ Top 3
+   let top3 = rankingList.slice(0, 3);
+   const rankContainer = document.getElementById('ranking-container');
+   rankContainer.innerHTML = '';
+
+   if (top3.length === 0 || top3[0].score === 0) {
+      rankContainer.innerHTML = `<p class="col-span-2 text-center text-gray-500 py-6">ข้อมูลยังไม่เพียงพอสำหรับการสร้าง Ranking</p>`;
+      return;
+   }
+
+   top3.forEach((u, i) => {
+      let icon = "";
+      if (i === 0) icon = `อันดับ 1 <i class="fa-solid fa-trophy text-yellow-500"></i>`;
+      else if (i === 1) icon = `อันดับ 2 <i class="fa-solid fa-medal text-gray-400"></i>`;
+      else if (i === 2) icon = `อันดับ 3 <i class="fa-solid fa-medal text-orange-400"></i>`;
+
+      rankContainer.innerHTML += `
+         <div class="bg-white p-3 rounded-lg shadow-sm flex justify-between items-center border border-yellow-100 transform transition hover:scale-105">
+           <div class="flex items-center gap-3">
+             <div class="font-bold text-sm bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full w-24 text-center">
+                ${icon}
+             </div>
+             <p class="font-bold text-gray-800">${u.name}</p>
+           </div>
+           <div class="font-bold text-xl text-blue-900">${u.score} <span class="text-xs text-gray-400 font-normal">pts</span></div>
+         </div>
+      `;
+   });
+}

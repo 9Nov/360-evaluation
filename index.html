@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ระบบ Web Application - การประเมิน 360 องศา</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="text-gray-800 antialiased">
+  
+  <!-- Global Loader -->
+  <div id="loader" class="loader-overlay hidden-section">
+    <div class="spinner"></div>
+    <p class="text-sm font-semibold text-blue-900 mt-2" id="loader-text">กำลังประมวลผล...</p>
+  </div>
+
+  <!-- Header -->
+  <header class="bg-blue-900 text-white shadow-md">
+    <div class="max-w-5xl mx-auto px-4 py-4 flex justify-between items-center">
+      <div class="flex items-center gap-3">
+        <i class="fa-solid fa-chart-pie text-2xl"></i>
+        <h1 class="font-bold text-xl tracking-wide">360° Evaluation</h1>
+      </div>
+      <div class="flex items-center gap-4">
+        <button id="btn-back" class="hidden text-blue-100 hover:text-white transition flex items-center gap-1.5 text-sm font-medium" onclick="goBack()">
+          <i class="fa-solid fa-arrow-left"></i>
+          <span class="hidden sm:inline">ย้อนกลับ</span>
+        </button>
+        <button id="btn-home" class="hidden text-blue-100 hover:text-white transition" onclick="goHome()" title="หน้าหลัก">
+          <i class="fa-solid fa-house text-xl"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Area -->
+  <main class="max-w-3xl mx-auto w-full p-4 mb-10 flex flex-col items-center">
+
+    <!-- Section: Landing -->
+    <section id="sec-landing" class="w-full fade-in mt-10">
+      <div class="text-center mb-8">
+        <h2 class="text-2xl font-bold text-blue-900 mb-2">ยินดีต้อนรับสู่ระบบประเมินผล</h2>
+        <p class="text-gray-500">กรุณาเลือกโหมดการเข้าใช้งาน</p>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-xl mx-auto">
+        <!-- Admin Card -->
+        <div onclick="showSection('sec-admin-login')" class="glass-card p-8 flex flex-col items-center cursor-pointer hover:bg-blue-50 transition">
+          <div class="w-16 h-16 rounded-full bg-blue-100 text-blue-900 flex items-center justify-center text-2xl mb-4">
+            <i class="fa-solid fa-user-shield"></i>
+          </div>
+          <h3 class="font-bold text-lg">สำหรับผู้ดูแลระบบ</h3>
+          <p class="text-sm text-gray-500 text-center mt-2">สร้างห้องประเมินและดูผลลัพธ์</p>
+        </div>
+        <!-- User Card -->
+        <div onclick="showSection('sec-user-join')" class="glass-card p-8 flex flex-col items-center cursor-pointer hover:bg-blue-50 transition">
+          <div class="w-16 h-16 rounded-full bg-blue-100 text-blue-500 flex items-center justify-center text-2xl mb-4">
+            <i class="fa-solid fa-users"></i>
+          </div>
+          <h3 class="font-bold text-lg">สำหรับผู้เข้าร่วม</h3>
+          <p class="text-sm text-gray-500 text-center mt-2">เข้าร่วมห้องเพื่อเริ่มการประเมิน</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section: Admin Login -->
+    <section id="sec-admin-login" class="w-full fade-in hidden-section mt-10 max-w-md mx-auto">
+      <div class="glass-card p-8">
+        <div class="text-center mb-6">
+          <h2 class="text-xl font-bold text-blue-900">เข้าสู่ระบบ (Admin)</h2>
+        </div>
+        <form onsubmit="handleAdminLogin(event)">
+          <div class="mb-4">
+            <label class="block text-sm font-semibold mb-2 text-gray-700">รหัสผ่าน</label>
+            <div class="relative">
+              <i class="fa-solid fa-lock absolute top-3.5 left-3.5 text-gray-400"></i>
+              <input type="password" id="admin-pass" class="input-custom pl-10" placeholder="ใส่รหัสผ่านผู้ดูแล...">
+            </div>
+            <p id="admin-error" class="text-red-500 text-xs mt-2 hidden">รหัสผ่านไม่ถูกต้อง</p>
+          </div>
+          <button type="submit" class="w-full btn-primary font-bold py-3 rounded-lg shadow-md flex items-center justify-center gap-2">
+            เข้าสู่ระบบ <i class="fa-solid fa-arrow-right"></i>
+          </button>
+        </form>
+        <div class="text-center mt-4">
+          <button onclick="goHome()" class="text-sm text-gray-500 hover:text-blue-600 underline">กลับหน้าหลัก</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section: Admin Dashboard -->
+    <section id="sec-admin-dashboard" class="w-full fade-in hidden-section mt-6">
+      <div class="flex justify-between items-center mb-6">
+        <h2 class="text-2xl font-bold text-blue-900">Admin Dashboard</h2>
+        <button onclick="goHome()" class="text-sm text-gray-500 bg-gray-200 px-3 py-1 rounded hover:bg-gray-300">ออกจากระบบ</button>
+      </div>
+
+      <div class="glass-card p-6 text-center mb-6">
+        <div class="mb-4 text-blue-500 text-4xl"><i class="fa-solid fa-door-open"></i></div>
+        <h3 class="text-lg font-bold mb-2">สร้างห้องประเมินใหม่</h3>
+        <p class="text-sm text-gray-500 mb-6">ระบบจะสร้างรหัสผ่านสุ่ม 5 หลักเพื่อให้ผู้ใช้เข้าร่วมได้</p>
+        <button onclick="createRoom()" class="btn-primary px-6 py-3 rounded-lg font-bold shadow hover:shadow-lg transition">
+          <i class="fa-solid fa-plus-circle mr-2"></i> สร้างห้องใหม่
+        </button>
+      </div>
+
+      <div id="admin-room-info" class="hidden glass-card p-8 text-center bg-blue-50 border-blue-200 border">
+        <h4 class="text-gray-600 font-semibold mb-2">รหัสห้องของคุณคือ</h4>
+        <div class="text-5xl font-black text-blue-900 tracking-widest bg-white py-4 rounded-xl border-dashed border-2 border-blue-300 w-max mx-auto px-8 mb-6 shadow-sm flex items-center gap-4">
+           <span id="display-room-code">A1B2C</span>
+           <button onclick="copyRoomCode()" class="text-xl text-gray-400 hover:text-blue-600 transition" title="คัดลอก"><i class="fa-regular fa-copy"></i></button>
+        </div>
+        <div class="flex justify-center flex-wrap gap-3 mt-6">
+           <button onclick="adminViewResult()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg font-semibold shadow">
+             <i class="fa-solid fa-ranking-star mr-2"></i> ดูผลสรุปห้องนี้
+           </button>
+           <button onclick="toggleAdminUsers()" class="bg-blue-500 hover:bg-blue-600 text-white px-5 py-2 rounded-lg font-semibold shadow">
+             <i class="fa-solid fa-users-gear mr-2"></i> จัดการผู้ใช้
+           </button>
+           <button onclick="toggleEvalMonitor()" class="bg-teal-600 hover:bg-teal-700 text-white px-5 py-2 rounded-lg font-semibold shadow">
+             <i class="fa-solid fa-table-cells-large mr-2"></i> ตรวจสอบการประเมิน
+           </button>
+           <button onclick="testMode()" class="bg-gray-800 hover:bg-gray-900 text-white px-5 py-2 rounded-lg font-semibold shadow text-sm">
+             <i class="fa-solid fa-flask mr-2"></i> Test Mode (จำลองข้อมูล)
+           </button>
+        </div>
+      </div>
+
+      <!-- Admin User Management Panel -->
+      <div id="admin-users-panel" class="hidden glass-card p-6 mt-4 border border-blue-100">
+        <div class="flex justify-between items-center mb-4">
+          <h4 class="font-bold text-gray-800 text-lg"><i class="fa-solid fa-users mr-2 text-blue-600"></i>ผู้เข้าร่วมในห้องนี้</h4>
+          <button onclick="refreshAdminUsers()" class="text-blue-600 text-sm hover:text-blue-800"><i class="fa-solid fa-rotate mr-1"></i>รีเฟรช</button>
+        </div>
+        <div id="admin-users-list" class="space-y-2 max-h-60 overflow-y-auto">
+          <p class="text-gray-400 text-sm text-center py-4">กำลังโหลด...</p>
+        </div>
+      </div>
+
+      <!-- Evaluation Status Monitor -->
+      <div id="admin-eval-monitor" class="hidden glass-card p-6 mt-4 border border-teal-100">
+
+        <!-- Header row -->
+        <div class="flex justify-between items-center mb-5">
+          <h4 class="font-bold text-gray-800 text-lg">
+            <i class="fa-solid fa-table-cells-large mr-2 text-teal-600"></i>สถานะการประเมิน
+          </h4>
+          <button onclick="refreshEvalMonitor()" class="text-teal-600 text-sm hover:text-teal-800 flex items-center gap-1.5">
+            <i class="fa-solid fa-rotate"></i> รีเฟรช
+          </button>
+        </div>
+
+        <!-- Summary stats + progress bar -->
+        <div id="eval-monitor-summary">
+          <p class="text-gray-400 text-sm text-center py-4">กำลังโหลด...</p>
+        </div>
+
+        <!-- Matrix table -->
+        <div id="eval-monitor-matrix"></div>
+
+        <!-- Pending list -->
+        <div id="eval-monitor-pending"></div>
+
+      </div>
+
+      <!-- Room History -->
+      <div class="glass-card p-6 mt-4">
+        <h4 class="font-bold text-gray-800 text-lg mb-3"><i class="fa-solid fa-clock-rotate-left mr-2 text-gray-500"></i>ประวัติห้องที่เคยสร้าง</h4>
+        <div id="room-history-list" class="space-y-2">
+          <p class="text-gray-400 text-sm text-center py-4">ยังไม่มีประวัติห้อง</p>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- Section: User Join -->
+    <section id="sec-user-join" class="w-full fade-in hidden-section mt-10 max-w-md mx-auto">
+      <div class="glass-card p-8">
+        <div class="text-center mb-6">
+          <h2 class="text-xl font-bold text-blue-900">เข้าร่วมการประเมิน</h2>
+          <p class="text-sm text-gray-500 mt-1">กรุณากรอกรหัสห้องเพื่อเข้าร่วม</p>
+        </div>
+
+        <!-- Step 1: Room Code Entry -->
+        <div id="join-step-1">
+          <div class="mb-4">
+            <label class="block text-sm font-semibold mb-2 text-gray-700">รหัสห้อง (Room Code)</label>
+            <div class="relative">
+              <i class="fa-solid fa-hashtag absolute top-3.5 left-3.5 text-gray-400"></i>
+              <input type="text" id="user-room-code" class="input-custom pl-10 uppercase" placeholder="ใส่รหัสห้อง 5 หลัก..." maxlength="5" oninput="this.value=this.value.toUpperCase()">
+            </div>
+          </div>
+          <button onclick="lookupRoomUsers()" class="w-full btn-primary font-bold py-3 rounded-lg shadow flex items-center justify-center gap-2">
+            ค้นหาห้อง <i class="fa-solid fa-magnifying-glass"></i>
+          </button>
+        </div>
+
+        <!-- Step 2: Join Mode -->
+        <div id="join-step-2" class="hidden">
+          <!-- Room Badge -->
+          <div class="flex items-center gap-2 mb-5 bg-blue-50 border border-blue-200 px-3 py-2 rounded-lg text-sm text-blue-800">
+            <i class="fa-solid fa-door-open text-blue-500"></i>
+            <span>ห้อง: <strong id="join-room-display">XXXXX</strong></span>
+            <button onclick="resetJoinStep()" class="ml-auto text-gray-400 hover:text-red-500 transition" title="เปลี่ยนห้อง">
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+          </div>
+
+          <!-- Tab Buttons -->
+          <div class="flex rounded-xl overflow-hidden border border-gray-200 mb-5 shadow-sm">
+            <button id="tab-btn-new" onclick="switchJoinTab('new')"
+              class="flex-1 py-2.5 text-sm font-semibold transition bg-blue-600 text-white">
+              <i class="fa-solid fa-user-plus mr-1"></i> ผู้ใช้ใหม่
+            </button>
+            <button id="tab-btn-returning" onclick="switchJoinTab('returning')"
+              class="flex-1 py-2.5 text-sm font-semibold transition bg-white text-gray-500">
+              <i class="fa-solid fa-rotate-left mr-1"></i> กลับมาประเมินต่อ
+            </button>
+          </div>
+
+          <!-- New User Panel -->
+          <div id="panel-new-user">
+            <div class="mb-4">
+              <label class="block text-sm font-semibold mb-2 text-gray-700">ชื่อของคุณ</label>
+              <div class="relative">
+                <i class="fa-solid fa-user absolute top-3.5 left-3.5 text-gray-400"></i>
+                <input type="text" id="user-name-new" class="input-custom pl-10" placeholder="พิมพ์ชื่อ-นามสกุล..." autocomplete="off">
+              </div>
+            </div>
+            <div class="mb-5">
+              <label class="block text-sm font-semibold mb-1 text-gray-700">
+                ตั้ง PIN 4 หลัก
+                <span class="text-xs font-normal text-gray-400 ml-1">(ใช้ครั้งต่อไปเพื่อยืนยันตัวตน)</span>
+              </label>
+              <div class="flex gap-3 justify-center mt-3">
+                <input type="password" inputmode="numeric" maxlength="1" autocomplete="off" class="pin-box" data-group="new" data-index="0">
+                <input type="password" inputmode="numeric" maxlength="1" autocomplete="off" class="pin-box" data-group="new" data-index="1">
+                <input type="password" inputmode="numeric" maxlength="1" autocomplete="off" class="pin-box" data-group="new" data-index="2">
+                <input type="password" inputmode="numeric" maxlength="1" autocomplete="off" class="pin-box" data-group="new" data-index="3">
+              </div>
+              <p id="pin-new-error" class="text-red-500 text-xs text-center mt-2 hidden">กรุณากรอก PIN ให้ครบ 4 หลัก (ตัวเลขเท่านั้น)</p>
+            </div>
+            <button onclick="handleNewUserJoin()" class="w-full btn-primary font-bold py-3 rounded-lg shadow flex items-center justify-center gap-2">
+              เข้าสู่ห้อง <i class="fa-solid fa-sign-in-alt"></i>
+            </button>
+          </div>
+
+          <!-- Returning User Panel -->
+          <div id="panel-returning-user" class="hidden">
+            <p class="text-sm text-gray-500 mb-3">เลือกชื่อของคุณจากรายชื่อด้านล่าง</p>
+            <div id="returning-users-list" class="space-y-2 max-h-36 overflow-y-auto mb-4">
+              <!-- Rendered from JS -->
+            </div>
+
+            <div class="border-t border-gray-100 pt-4">
+              <!-- Name field (auto-filled on select, or type manually) -->
+              <div class="mb-4">
+                <label class="block text-sm font-semibold mb-2 text-gray-700">ชื่อที่ใช้ในห้องนี้</label>
+                <div class="relative">
+                  <i class="fa-solid fa-user absolute top-3.5 left-3.5 text-gray-400"></i>
+                  <input type="text" id="user-name-returning" class="input-custom pl-10" placeholder="หรือพิมพ์ชื่อที่เคยใช้..." autocomplete="off">
+                </div>
+              </div>
+
+              <!-- PIN verification -->
+              <div class="mb-5">
+                <label class="block text-sm font-semibold mb-1 text-gray-700">PIN 4 หลัก</label>
+                <div class="flex gap-3 justify-center mt-3">
+                  <input type="password" inputmode="numeric" maxlength="1" autocomplete="off" class="pin-box" data-group="returning" data-index="0">
+                  <input type="password" inputmode="numeric" maxlength="1" autocomplete="off" class="pin-box" data-group="returning" data-index="1">
+                  <input type="password" inputmode="numeric" maxlength="1" autocomplete="off" class="pin-box" data-group="returning" data-index="2">
+                  <input type="password" inputmode="numeric" maxlength="1" autocomplete="off" class="pin-box" data-group="returning" data-index="3">
+                </div>
+                <p id="pin-returning-error" class="text-red-500 text-xs text-center mt-2 hidden">PIN ไม่ถูกต้อง กรุณาลองอีกครั้ง</p>
+              </div>
+
+              <button onclick="handleReturningUserJoin()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg shadow flex items-center justify-center gap-2 transition">
+                เข้าสู่ห้องต่อ <i class="fa-solid fa-sign-in-alt"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="text-center mt-6">
+          <button onclick="goHome()" class="text-sm text-gray-500 hover:text-blue-600 underline">กลับหน้าหลัก</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section: User Lobby -->
+    <section id="sec-user-lobby" class="w-full fade-in hidden-section mt-6">
+      <div class="bg-blue-900 text-white rounded-xl p-6 shadow-md mb-6 flex justify-between items-center">
+        <div>
+          <p class="text-blue-200 text-sm mb-1">ยินดีต้อนรับ</p>
+          <h2 class="text-xl font-bold" id="lobby-user-name">คุณ ...</h2>
+        </div>
+        <div class="text-right">
+          <p class="text-blue-200 text-sm mb-1">รหัสห้อง</p>
+          <div class="bg-white text-blue-900 font-black px-3 py-1 rounded tracking-widest" id="lobby-room-code">XXXXX</div>
+        </div>
+      </div>
+
+      <div class="flex justify-between items-end mb-4">
+        <div>
+          <h3 class="text-lg font-bold text-gray-800">ผู้เข้าร่วมทั้งหมด (<span id="lobby-count">0</span> คน)</h3>
+          <p class="text-sm text-gray-500">เลือกเพื่อนเพื่อทำการประเมิน</p>
+        </div>
+        <button onclick="refreshLobby()" class="text-blue-600 hover:text-blue-800 text-sm" title="อัปเดตรายชื่อ">
+          <i class="fa-solid fa-rotate"></i> รีเฟรช
+        </button>
+      </div>
+
+      <div id="lobby-users-container" class="grid grid-cols-1 gap-4 mb-6">
+        <!-- Render from JS -->
+      </div>
+
+      <div class="flex justify-center mt-6">
+        <button id="btn-final-submit" onclick="showResultSummary()" class="hidden bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-8 rounded-full shadow-lg transition transform hover:scale-105">
+           ดูสรุปผลการประเมิน <i class="fa-solid fa-flag-checkered ml-2"></i>
+        </button>
+      </div>
+    </section>
+
+    <!-- Section: Evaluation Form -->
+    <section id="sec-eval-form" class="w-full fade-in hidden-section mt-6 max-w-2xl mx-auto">
+      <div class="flex items-center gap-3 mb-6">
+        <button onclick="showSection('sec-user-lobby')" class="w-10 h-10 rounded-full bg-white shadow flex items-center justify-center text-gray-500 hover:text-blue-600">
+          <i class="fa-solid fa-arrow-left"></i>
+        </button>
+        <div>
+          <h2 class="text-xl font-bold text-blue-900">ประเมินเพื่อน</h2>
+          <p class="text-sm text-gray-500">กำลังประเมิน: <strong class="text-blue-600" id="eval-target-name">Target</strong></p>
+        </div>
+      </div>
+
+      <div class="glass-card p-2 md:p-6 mb-4">
+        <p class="text-sm text-left mb-6 text-gray-500 bg-blue-50 p-3 rounded-lg"><i class="fa-solid fa-info-circle mr-2 text-blue-400"></i> โปรดให้คะแนน 1-5 (1 = น้อยสุด, 5 = มากสุด)</p>
+        
+        <form id="eval-form" onsubmit="submitEvaluation(event)">
+          <!-- Dynamic Q1-Q5 -->
+          <div id="eval-questions-container"></div>
+          
+          <div class="mt-8">
+            <button id="btn-submit-eval" type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow opacity-50 cursor-not-allowed transition" disabled>
+              บันทึกผลการประเมิน
+            </button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- Section: Result & Ranking -->
+    <section id="sec-result" class="w-full fade-in hidden-section mt-6">
+      
+      <div id="result-loading" class="text-center py-12">
+        <div class="spinner mx-auto mb-4 border-gray-200 border-t-blue-500"></div>
+        <p class="text-gray-500">กำลังคำนวณผลประเมิน...</p>
+      </div>
+
+      <div id="result-content" class="hidden">
+        <div class="bg-gradient-to-r from-blue-900 to-blue-700 text-white rounded-2xl p-8 shadow-lg mb-8 text-center relative overflow-hidden">
+          <div class="absolute -right-4 -top-4 opacity-10 text-9xl">
+            <i class="fa-solid fa-award"></i>
+          </div>
+          <h2 class="text-xl font-semibold mb-2">สรุปผลการประเมินของคุณ</h2>
+          <p class="text-blue-200 text-sm mb-6" id="result-user-name">คุณ ...</p>
+          <div class="inline-block bg-white text-blue-900 px-6 py-4 rounded-xl shadow-inner">
+            <p class="text-sm font-semibold uppercase tracking-wider text-gray-500 mb-1">คะแนนรวมทั้งหมด</p>
+            <div class="text-5xl font-black" id="result-total-score">0.0</div>
+            <p class="text-xs text-gray-400 mt-2">จากคะแนนเต็ม <span id="result-max-score">0</span></p>
+          </div>
+        </div>
+
+        <h3 class="font-bold text-lg text-gray-800 mb-4 border-b pb-2"><i class="fa-solid fa-chart-bar text-blue-500 mr-2"></i>คะแนนเฉลี่ยแต่ละหัวข้อ</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8" id="result-avg-container">
+           <!-- Rendered from JS -->
+        </div>
+
+        <div class="glass-card bg-yellow-50 border-yellow-200 p-6">
+          <h3 class="font-bold text-lg text-yellow-800 mb-6 text-center"><i class="fa-solid fa-crown text-yellow-500 mr-2"></i>Ranking ห้อง (Top 3)</h3>
+          <div id="ranking-container" class="space-y-3">
+             <!-- Rendered from JS -->
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="mt-auto py-6 text-center text-gray-400 text-sm border-t border-gray-200 bg-white">
+    <p>&copy; 2026 ระบบการประเมิน 360 องศา (360° Evaluation)</p>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
