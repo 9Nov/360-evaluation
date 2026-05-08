@@ -140,8 +140,7 @@ async function createRoom() {
       document.getElementById('display-room-code').innerText = randCode;
       document.getElementById('admin-room-info').classList.remove('hidden');
       document.getElementById('admin-users-panel').classList.add('hidden');
-      saveRoomToHistory(randCode);
-      renderRoomHistory();
+      await renderRoomHistory();
    }
 }
 
@@ -201,25 +200,25 @@ async function testMode() {
 }
 
 // ==========================================
-// 6. Room History (localStorage)
+// 6. Room History (API-synced — all devices)
 // ==========================================
-function saveRoomToHistory(code) {
-   let history = JSON.parse(localStorage.getItem('roomHistory') || '[]');
-   history = history.filter(r => r.code !== code);
-   history.unshift({ code, createdAt: new Date().toLocaleString('th-TH') });
-   if (history.length > 10) history = history.slice(0, 10);
-   localStorage.setItem('roomHistory', JSON.stringify(history));
-}
 
-function renderRoomHistory() {
-   const history = JSON.parse(localStorage.getItem('roomHistory') || '[]');
+// Fetches ALL rooms from the central Google Sheet so every device sees
+// the same list regardless of which device created each room.
+async function renderRoomHistory() {
    const container = document.getElementById('room-history-list');
    if (!container) return;
-   if (history.length === 0) {
+
+   container.innerHTML = '<p class="text-gray-400 text-sm text-center py-4"><i class="fa-solid fa-rotate fa-spin mr-1"></i>กำลังโหลด...</p>';
+
+   const res = await callAPI("getAllRooms", {});
+
+   if (!res || res.status !== "success" || !res.rooms || res.rooms.length === 0) {
       container.innerHTML = '<p class="text-gray-400 text-sm text-center py-4">ยังไม่มีประวัติห้อง</p>';
       return;
    }
-   container.innerHTML = history.map(r => `
+
+   container.innerHTML = res.rooms.map(r => `
       <div class="flex items-center justify-between bg-gray-50 border border-gray-100 rounded-lg p-3 hover:bg-blue-50 transition">
          <div>
             <span class="font-black text-blue-900 tracking-wider text-lg">${r.code}</span>
@@ -237,6 +236,7 @@ function revisitRoom(code) {
    document.getElementById('display-room-code').innerText = code;
    document.getElementById('admin-room-info').classList.remove('hidden');
    document.getElementById('admin-users-panel').classList.add('hidden');
+   document.getElementById('admin-eval-monitor').classList.add('hidden');
    window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 

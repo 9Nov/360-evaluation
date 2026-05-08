@@ -129,6 +129,30 @@ function doPost(e) {
       }
       result.message = "User deleted";
     }
+    else if (action === "getAllRooms") {
+      const dbRooms = ss.getSheetByName("Rooms");
+      const roomsData = dbRooms.getDataRange().getValues();
+      const rooms = [];
+      for (let i = 1; i < roomsData.length; i++) {
+        const code = String(roomsData[i][0] || '').trim();
+        if (!code) continue;
+        let createdAt = '';
+        if (roomsData[i][1]) {
+          try {
+            createdAt = Utilities.formatDate(
+              new Date(String(roomsData[i][1])),
+              'Asia/Bangkok',
+              'dd/MM/yyyy HH:mm'
+            );
+          } catch(ex) {
+            createdAt = String(roomsData[i][1]);
+          }
+        }
+        rooms.push({ code: code, createdAt: createdAt });
+      }
+      rooms.reverse(); // newest first
+      result.rooms = rooms;
+    }
     else if (action === "submitEvaluation") {
       const db = ss.getSheetByName("Evaluations");
       db.appendRow([
