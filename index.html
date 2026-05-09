@@ -117,6 +117,19 @@
            <span id="display-room-code">A1B2C</span>
            <button onclick="copyRoomCode()" class="text-xl text-gray-400 hover:text-blue-600 transition" title="คัดลอก"><i class="fa-regular fa-copy"></i></button>
         </div>
+        <!-- Activity Name -->
+        <div class="mt-5 mb-1 flex gap-2 items-center max-w-sm mx-auto">
+          <div class="relative flex-1">
+            <i class="fa-solid fa-tag absolute top-3 left-3 text-amber-400 text-sm"></i>
+            <input type="text" id="admin-activity-name" maxlength="80" autocomplete="off"
+              class="w-full border border-amber-200 bg-amber-50 rounded-lg pl-8 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300 placeholder-amber-300 text-gray-700"
+              placeholder="ชื่อกิจกรรม (เช่น ประเมินทีม Q2)...">
+          </div>
+          <button onclick="saveActivityName()" class="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2.5 rounded-lg font-semibold shadow text-sm whitespace-nowrap transition">
+            <i class="fa-solid fa-floppy-disk mr-1"></i> บันทึก
+          </button>
+        </div>
+
         <div class="flex justify-center flex-wrap gap-3 mt-6">
            <button onclick="adminViewResult()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg font-semibold shadow">
              <i class="fa-solid fa-ranking-star mr-2"></i> ดูผลสรุปห้องนี้
@@ -212,7 +225,7 @@
       <div class="glass-card p-8">
         <div class="text-center mb-6">
           <h2 class="text-xl font-bold text-blue-900">เข้าร่วมการประเมิน</h2>
-          <p class="text-sm text-gray-500 mt-1">กรุณากรอกรหัสห้องเพื่อเข้าร่วม</p>
+          <p id="join-subtitle" class="text-sm text-gray-500 mt-1">กรุณากรอกรหัสห้องเพื่อเข้าร่วม</p>
         </div>
 
         <!-- Step 1: Room Code Entry -->

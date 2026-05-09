@@ -22,7 +22,8 @@ let state = {
    evaluations: [],
    targetEvaluatee: null,
    currentScores: [],
-   roomCriteria: null  // null = use default evaluationCriteria
+   roomCriteria: null,    // null = use default evaluationCriteria
+   activityName: ''       // display name for this room's activity
 };
 
 let tempCriteria = []; // working copy inside the criteria editor
@@ -153,7 +154,9 @@ async function createRoom() {
    if (res && res.status === "success") {
       state.roomCode = randCode;
       state.roomCriteria = null;
+      state.activityName = '';
       document.getElementById('display-room-code').innerText = randCode;
+      document.getElementById('admin-activity-name').value = '';
       document.getElementById('admin-room-info').classList.remove('hidden');
       document.getElementById('admin-users-panel').classList.add('hidden');
       document.getElementById('admin-eval-monitor').classList.add('hidden');
@@ -165,6 +168,19 @@ async function createRoom() {
 function copyRoomCode() {
    navigator.clipboard.writeText(state.roomCode);
    alert("คัดลอกรหัสห้องแล้ว!");
+}
+
+async function saveActivityName() {
+   if (!state.roomCode) return;
+   const name = document.getElementById('admin-activity-name').value.trim();
+   const res = await callAPI("setActivityName", { roomCode: state.roomCode, activityName: name });
+   if (res && res.status === "success") {
+      state.activityName = name;
+      await renderRoomHistory(); // refresh history so the new name shows there too
+      alert(name ? `บันทึกชื่อกิจกรรม "${name}" เรียบร้อยแล้ว` : "ล้างชื่อกิจกรรมเรียบร้อยแล้ว");
+   } else {
+      alert("เกิดข้อผิดพลาด: " + (res && res.message ? res.message : "ไม่สามารถบันทึกได้"));
+   }
 }
 
 async function adminViewResult() {
@@ -237,6 +253,7 @@ async function renderRoomHistory() {
       <div class="flex items-center justify-between bg-gray-50 border border-gray-100 rounded-lg p-3 hover:bg-blue-50 transition">
          <div>
             <span class="font-black text-blue-900 tracking-wider text-lg">${r.code}</span>
+            ${r.activityName ? `<p class="text-xs font-semibold text-amber-700 mt-0.5"><i class="fa-solid fa-star text-amber-400 mr-1 text-xs"></i>${r.activityName}</p>` : ''}
             <p class="text-xs text-gray-400 mt-0.5">${r.createdAt}</p>
          </div>
          <div class="flex items-center gap-2">
@@ -259,10 +276,12 @@ async function revisitRoom(code) {
    document.getElementById('admin-users-panel').classList.add('hidden');
    document.getElementById('admin-eval-monitor').classList.add('hidden');
    document.getElementById('admin-criteria-panel').classList.add('hidden');
-   // Load room criteria so the editor and evaluation form use correct questions
+   // Load room data (criteria + activityName) for the admin panel
    const res = await callAPI("getRoomData", { roomCode: code });
    if (res && res.status === "success") {
       state.roomCriteria = res.criteria || null;
+      state.activityName = res.activityName || '';
+      document.getElementById('admin-activity-name').value = state.activityName;
    }
    window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -575,6 +594,16 @@ async function lookupRoomUsers() {
    if (res && res.status === "success") {
       if (res.roomExists === false) { alert("ไม่พบรหัสห้องนี้ในระบบ โปรดตรวจสอบอีกครั้ง"); return; }
       roomUsersCache = res.users || [];
+
+      // Show activity name in the subtitle below the page title
+      const subtitle = document.getElementById('join-subtitle');
+      const name = (res.activityName || '').trim();
+      if (name) {
+         subtitle.innerHTML = `<span class="inline-flex items-center gap-1.5 bg-amber-50 text-amber-800 border border-amber-200 px-3 py-1 rounded-full text-sm font-semibold mt-1"><i class="fa-solid fa-star text-amber-400 text-xs"></i>${escapeHtml(name)}</span>`;
+      } else {
+         subtitle.textContent = 'กรุณากรอกรหัสห้องเพื่อเข้าร่วม';
+      }
+
       document.getElementById('join-room-display').innerText = code;
       document.getElementById('join-step-1').classList.add('hidden');
       document.getElementById('join-step-2').classList.remove('hidden');
@@ -589,6 +618,7 @@ function resetJoinStep() {
    document.getElementById('user-room-code').value = '';
    document.getElementById('user-name-new').value = '';
    document.getElementById('user-name-returning').value = '';
+   document.getElementById('join-subtitle').textContent = 'กรุณากรอกรหัสห้องเพื่อเข้าร่วม';
    clearPinBoxes('new');
    clearPinBoxes('returning');
    hidePinError('new');
@@ -704,9 +734,10 @@ async function doJoinRoom(roomCode, userName, pin, pinGroup) {
 async function fetchRoomData() {
    const res = await callAPI("getRoomData", { roomCode: state.roomCode });
    if (res && res.status === "success") {
-      state.usersInRoom = res.users;
-      state.evaluations = res.evaluations;
-      state.roomCriteria = res.criteria || null;
+      state.usersInRoom   = res.users;
+      state.evaluations   = res.evaluations;
+      state.roomCriteria  = res.criteria || null;
+      state.activityName  = res.activityName || '';
       if (state.userName && state.userName !== "Admin") renderLobby();
    }
 }

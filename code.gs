@@ -125,16 +125,19 @@ function doPost(e) {
         }
       }
 
-      // Return room criteria (column C of Rooms sheet)
-      let criteria = null;
-      const roomRowForCriteria = roomsData.find((r, idx) => idx > 0 && r[0] == payload.roomCode);
-      if (roomRowForCriteria && roomRowForCriteria[2]) {
-        try { criteria = JSON.parse(String(roomRowForCriteria[2])); } catch(ex) {}
+      // Return room criteria (col C) and activity name (col D) from Rooms sheet
+      let criteria     = null;
+      let activityName = '';
+      const roomRow = roomsData.find((r, idx) => idx > 0 && r[0] == payload.roomCode);
+      if (roomRow) {
+        if (roomRow[2]) { try { criteria = JSON.parse(String(roomRow[2])); } catch(ex) {} }
+        activityName = String(roomRow[3] || '').trim();
       }
 
-      result.users = users;
-      result.evaluations = evaluations;
-      result.criteria = criteria;
+      result.users        = users;
+      result.evaluations  = evaluations;
+      result.criteria     = criteria;
+      result.activityName = activityName;
     }
     else if (action === "deleteUser") {
       const dbUsers = ss.getSheetByName("Users");
@@ -173,10 +176,25 @@ function doPost(e) {
             createdAt = String(roomsData[i][1]);
           }
         }
-        rooms.push({ code: code, createdAt: createdAt });
+        const activityName = String(roomsData[i][3] || '').trim();
+        rooms.push({ code: code, createdAt: createdAt, activityName: activityName });
       }
       rooms.reverse(); // newest first
       result.rooms = rooms;
+    }
+    else if (action === "setActivityName") {
+      const dbRooms = ss.getSheetByName("Rooms");
+      const roomsData = dbRooms.getDataRange().getValues();
+      let found = false;
+      for (let i = 1; i < roomsData.length; i++) {
+        if (roomsData[i][0] == payload.roomCode) {
+          dbRooms.getRange(i + 1, 4).setValue(String(payload.activityName || '').trim());
+          found = true;
+          break;
+        }
+      }
+      if (!found) return responseJson({ status: "error", message: "ไม่พบห้องนี้" });
+      result.message = "Activity name saved";
     }
     else if (action === "setCriteria") {
       const dbRooms = ss.getSheetByName("Rooms");
