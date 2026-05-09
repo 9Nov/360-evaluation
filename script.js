@@ -21,8 +21,23 @@ let state = {
    usersInRoom: [],
    evaluations: [],
    targetEvaluatee: null,
-   currentScores: [0, 0, 0, 0, 0] // 5 ข้อ
+   currentScores: [],
+   roomCriteria: null  // null = use default evaluationCriteria
 };
+
+let tempCriteria = []; // working copy inside the criteria editor
+
+function getActiveCriteria() {
+   return (state.roomCriteria && state.roomCriteria.length > 0)
+      ? state.roomCriteria
+      : evaluationCriteria;
+}
+
+function escapeHtml(str) {
+   return String(str)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
 
 // ==========================================
 // 3. UI Navigation & Loading
@@ -137,9 +152,12 @@ async function createRoom() {
    const res = await callAPI("createRoom", { roomCode: randCode });
    if (res && res.status === "success") {
       state.roomCode = randCode;
+      state.roomCriteria = null;
       document.getElementById('display-room-code').innerText = randCode;
       document.getElementById('admin-room-info').classList.remove('hidden');
       document.getElementById('admin-users-panel').classList.add('hidden');
+      document.getElementById('admin-eval-monitor').classList.add('hidden');
+      document.getElementById('admin-criteria-panel').classList.add('hidden');
       await renderRoomHistory();
    }
 }
@@ -175,14 +193,11 @@ async function testMode() {
    }
 
    // 2. ให้แต่ละคนประเมินเพื่อน
+   const criteriaCount = getActiveCriteria().length;
    for (let evaluator of dummyUsers) {
       for (let evaluatee of dummyUsers) {
          if (evaluator === evaluatee) continue;
-         const s1 = Math.floor(Math.random() * 3) + 3; // 3-5
-         const s2 = Math.floor(Math.random() * 3) + 3;
-         const s3 = Math.floor(Math.random() * 3) + 3;
-         const s4 = Math.floor(Math.random() * 3) + 3;
-         const s5 = Math.floor(Math.random() * 3) + 3;
+         const scores = Array.from({ length: criteriaCount }, () => Math.floor(Math.random() * 3) + 3);
          await fetch(API_URL, {
             method: 'POST',
             body: JSON.stringify({
@@ -190,7 +205,7 @@ async function testMode() {
                roomCode: state.roomCode,
                evaluator: evaluator,
                evaluatee: evaluatee,
-               scores: [s1, s2, s3, s4, s5]
+               scores: scores
             })
          });
       }
@@ -224,19 +239,31 @@ async function renderRoomHistory() {
             <span class="font-black text-blue-900 tracking-wider text-lg">${r.code}</span>
             <p class="text-xs text-gray-400 mt-0.5">${r.createdAt}</p>
          </div>
-         <button onclick="revisitRoom('${r.code}')" class="text-sm bg-blue-100 text-blue-700 hover:bg-blue-200 px-3 py-1.5 rounded-lg font-semibold transition">
-            <i class="fa-solid fa-arrow-right mr-1"></i> เข้าห้องนี้
-         </button>
+         <div class="flex items-center gap-2">
+            <button onclick="revisitRoom('${r.code}')" class="text-sm bg-blue-100 text-blue-700 hover:bg-blue-200 px-3 py-1.5 rounded-lg font-semibold transition">
+               <i class="fa-solid fa-arrow-right mr-1"></i> เข้าห้องนี้
+            </button>
+            <button onclick="deleteRoomFromHistory('${r.code}')" class="text-sm bg-red-50 text-red-500 hover:bg-red-100 px-3 py-1.5 rounded-lg font-semibold transition" title="ลบห้องนี้">
+               <i class="fa-solid fa-trash"></i>
+            </button>
+         </div>
       </div>
    `).join('');
 }
 
-function revisitRoom(code) {
+async function revisitRoom(code) {
    state.roomCode = code;
+   state.roomCriteria = null;
    document.getElementById('display-room-code').innerText = code;
    document.getElementById('admin-room-info').classList.remove('hidden');
    document.getElementById('admin-users-panel').classList.add('hidden');
    document.getElementById('admin-eval-monitor').classList.add('hidden');
+   document.getElementById('admin-criteria-panel').classList.add('hidden');
+   // Load room criteria so the editor and evaluation form use correct questions
+   const res = await callAPI("getRoomData", { roomCode: code });
+   if (res && res.status === "success") {
+      state.roomCriteria = res.criteria || null;
+   }
    window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -679,6 +706,7 @@ async function fetchRoomData() {
    if (res && res.status === "success") {
       state.usersInRoom = res.users;
       state.evaluations = res.evaluations;
+      state.roomCriteria = res.criteria || null;
       if (state.userName && state.userName !== "Admin") renderLobby();
    }
 }
@@ -737,7 +765,7 @@ function renderLobby() {
 // ==========================================
 function openEvaluationForm(peerName) {
    state.targetEvaluatee = peerName;
-   state.currentScores = [0, 0, 0, 0, 0];
+   state.currentScores = getActiveCriteria().map(() => 0);
    document.getElementById('eval-target-name').innerText = peerName;
    document.getElementById('btn-submit-eval').disabled = true;
    document.getElementById('btn-submit-eval').classList.add('opacity-50', 'cursor-not-allowed');
@@ -750,7 +778,7 @@ function renderQuestions() {
    const container = document.getElementById('eval-questions-container');
    container.innerHTML = '';
 
-   evaluationCriteria.forEach((crit, index) => {
+   getActiveCriteria().forEach((crit, index) => {
       let div = document.createElement('div');
       div.className = "mb-6 pb-6 border-b border-gray-100 last:border-0";
 
@@ -803,7 +831,127 @@ async function submitEvaluation(e) {
 }
 
 // ==========================================
-// 12. Result Summary & Ranking Logic
+// 12. Criteria Editor (Admin)
+// ==========================================
+function toggleCriteriaEditor() {
+   const panel = document.getElementById('admin-criteria-panel');
+   if (panel.classList.contains('hidden')) {
+      panel.classList.remove('hidden');
+      tempCriteria = JSON.parse(JSON.stringify(getActiveCriteria()));
+      renderCriteriaEditor();
+   } else {
+      panel.classList.add('hidden');
+   }
+}
+
+function renderCriteriaEditor() {
+   const container = document.getElementById('criteria-items-list');
+   container.innerHTML = '';
+   tempCriteria.forEach((crit, index) => {
+      const item = document.createElement('div');
+      item.className = 'bg-gray-50 border border-gray-200 rounded-xl p-3';
+
+      const header = document.createElement('div');
+      header.className = 'flex items-center gap-2 mb-2';
+      header.innerHTML = `<span class="text-xs font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded">หัวข้อ ${index + 1}</span>`;
+
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'ml-auto text-gray-300 hover:text-red-500 transition';
+      removeBtn.innerHTML = '<i class="fa-solid fa-circle-xmark text-lg"></i>';
+      removeBtn.addEventListener('click', () => {
+         tempCriteria.splice(index, 1);
+         renderCriteriaEditor();
+      });
+      header.appendChild(removeBtn);
+
+      const titleInput = document.createElement('input');
+      titleInput.type = 'text';
+      titleInput.className = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-purple-300';
+      titleInput.placeholder = 'ชื่อหัวข้อ (เช่น Teamwork)';
+      titleInput.value = crit.title;
+      titleInput.addEventListener('input', e => { tempCriteria[index].title = e.target.value; });
+
+      const descInput = document.createElement('input');
+      descInput.type = 'text';
+      descInput.className = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300';
+      descInput.placeholder = 'คำอธิบาย (ไม่บังคับ)';
+      descInput.value = crit.desc || '';
+      descInput.addEventListener('input', e => { tempCriteria[index].desc = e.target.value; });
+
+      item.appendChild(header);
+      item.appendChild(titleInput);
+      item.appendChild(descInput);
+      container.appendChild(item);
+   });
+}
+
+function addCriteriaItem() {
+   if (tempCriteria.length >= 10) { alert("กำหนดได้สูงสุด 10 หัวข้อ"); return; }
+   tempCriteria.push({ id: `q${tempCriteria.length + 1}`, title: '', desc: '' });
+   renderCriteriaEditor();
+   // Focus the new title input
+   const inputs = document.querySelectorAll('#criteria-items-list input[type="text"]');
+   if (inputs.length) inputs[inputs.length - 2].focus(); // -2 = title of last item
+}
+
+async function saveCriteria() {
+   if (tempCriteria.length === 0) { alert("ต้องมีอย่างน้อย 1 หัวข้อ"); return; }
+   if (tempCriteria.some(c => !c.title.trim())) { alert("กรุณากรอกชื่อหัวข้อให้ครบทุกข้อ"); return; }
+
+   const res = await callAPI("setCriteria", { roomCode: state.roomCode, criteria: tempCriteria });
+   if (res && res.status === "success") {
+      state.roomCriteria = JSON.parse(JSON.stringify(tempCriteria));
+      document.getElementById('admin-criteria-panel').classList.add('hidden');
+      alert("บันทึกหัวข้อเรียบร้อยแล้ว!");
+   } else {
+      alert("เกิดข้อผิดพลาด: " + (res && res.message ? res.message : "ไม่สามารถบันทึกได้"));
+   }
+}
+
+function resetCriteriaToDefault() {
+   if (!confirm("รีเซ็ตกลับเป็นหัวข้อเริ่มต้น 5 ข้อ?")) return;
+   tempCriteria = JSON.parse(JSON.stringify(evaluationCriteria));
+   renderCriteriaEditor();
+}
+
+// ==========================================
+// 13. Delete Room
+// ==========================================
+async function deleteCurrentRoom() {
+   if (!state.roomCode) return;
+   if (!confirm(`ยืนยันการลบห้อง "${state.roomCode}"?\nข้อมูลผู้เข้าร่วมและผลการประเมินทั้งหมดจะถูกลบออกด้วย`)) return;
+
+   const code = state.roomCode;
+   const res = await callAPI("deleteRoom", { roomCode: code });
+   if (res && res.status === "success") {
+      state.roomCode = null;
+      state.roomCriteria = null;
+      ['admin-room-info','admin-users-panel','admin-eval-monitor','admin-criteria-panel'].forEach(id => {
+         document.getElementById(id).classList.add('hidden');
+      });
+      await renderRoomHistory();
+      alert(`ลบห้อง ${code} เรียบร้อยแล้ว`);
+   }
+}
+
+async function deleteRoomFromHistory(code) {
+   if (!confirm(`ยืนยันการลบห้อง "${code}"?\nข้อมูลทั้งหมดในห้องนี้จะถูกลบออก`)) return;
+
+   const res = await callAPI("deleteRoom", { roomCode: code });
+   if (res && res.status === "success") {
+      if (state.roomCode === code) {
+         state.roomCode = null;
+         state.roomCriteria = null;
+         ['admin-room-info','admin-users-panel','admin-eval-monitor','admin-criteria-panel'].forEach(id => {
+            document.getElementById(id).classList.add('hidden');
+         });
+      }
+      await renderRoomHistory();
+   }
+}
+
+// ==========================================
+// 14. Result Summary & Ranking Logic
 // ==========================================
 async function showResultSummary() {
    showSection('sec-result');
@@ -837,17 +985,20 @@ function calculateResults() {
    avgContainer.innerHTML = '';
 
    if (state.userName !== "Admin") {
+      const criteria = getActiveCriteria();
       // คำนวณคะแนนของตัวเอง
-      for (let q = 0; q < 5; q++) {
+      for (let q = 0; q < criteria.length; q++) {
          let sum = 0;
-         myEvals.forEach(ev => sum += ev.scores[q]);
+         myEvals.forEach(ev => sum += Number(ev.scores[q] || 0));
          let avg = (sum / myEvals.length).toFixed(2);
          totalScoreAll += sum;
 
+         // Strip leading "N. " numbering if present, otherwise show full title
+         const displayTitle = criteria[q].title.replace(/^\d+\.\s*/, '');
          avgContainer.innerHTML += `
              <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
                 <div>
-                  <h4 class="font-bold text-gray-800 text-sm truncate">${evaluationCriteria[q].title.split('. ')[1]}</h4>
+                  <h4 class="font-bold text-gray-800 text-sm truncate">${displayTitle}</h4>
                 </div>
                 <div class="bg-blue-50 text-blue-800 font-bold px-3 py-1 rounded-lg">
                   ${avg} <span class="text-xs text-blue-400 font-normal">/ 5</span>
@@ -856,7 +1007,7 @@ function calculateResults() {
           `;
       }
       document.getElementById('result-total-score').innerText = totalScoreAll;
-      document.getElementById('result-max-score').innerText = (myEvals.length * 25); // เต็มคือคนประเมิน x 25
+      document.getElementById('result-max-score').innerText = (myEvals.length * criteria.length * 5);
    } else {
       // Admin view (Hide My Score section to save space)
       document.querySelector('#result-content > div.bg-gradient-to-r').style.display = 'none';
@@ -869,7 +1020,7 @@ function calculateResults() {
 }
 
 // ==========================================
-// 13. Initialisation
+// 15. Initialisation
 // ==========================================
 document.addEventListener('DOMContentLoaded', () => {
    setupPinBoxes();

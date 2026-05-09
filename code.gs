@@ -7,7 +7,7 @@ function setupSheets() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   if(!ss.getSheetByName("Rooms")) {
     const sheet = ss.insertSheet("Rooms");
-    sheet.appendRow(["Room Code", "Created At"]);
+    sheet.appendRow(["Room Code", "Created At", "Criteria JSON"]);
   }
   if(!ss.getSheetByName("Users")) {
     const sheet = ss.insertSheet("Users");
@@ -109,15 +109,32 @@ function doPost(e) {
       const evaluations = [];
       for (let i = 1; i < eData.length; i++) {
         if (eData[i][0] == payload.roomCode) {
-          evaluations.push({
-            evaluator: eData[i][1],
-            evaluatee: eData[i][2],
-            scores: [eData[i][3], eData[i][4], eData[i][5], eData[i][6], eData[i][7]]
-          });
+          // Support both new (JSON in col D) and legacy (5 individual score columns)
+          let scores;
+          const rawD = String(eData[i][3] || '');
+          if (rawD.startsWith('[')) {
+            try { scores = JSON.parse(rawD); } catch(ex) { scores = [0,0,0,0,0]; }
+          } else {
+            scores = [
+              Number(eData[i][3] || 0), Number(eData[i][4] || 0),
+              Number(eData[i][5] || 0), Number(eData[i][6] || 0),
+              Number(eData[i][7] || 0)
+            ];
+          }
+          evaluations.push({ evaluator: eData[i][1], evaluatee: eData[i][2], scores: scores });
         }
       }
+
+      // Return room criteria (column C of Rooms sheet)
+      let criteria = null;
+      const roomRowForCriteria = roomsData.find((r, idx) => idx > 0 && r[0] == payload.roomCode);
+      if (roomRowForCriteria && roomRowForCriteria[2]) {
+        try { criteria = JSON.parse(String(roomRowForCriteria[2])); } catch(ex) {}
+      }
+
       result.users = users;
       result.evaluations = evaluations;
+      result.criteria = criteria;
     }
     else if (action === "deleteUser") {
       const dbUsers = ss.getSheetByName("Users");
@@ -153,17 +170,47 @@ function doPost(e) {
       rooms.reverse(); // newest first
       result.rooms = rooms;
     }
+    else if (action === "setCriteria") {
+      const dbRooms = ss.getSheetByName("Rooms");
+      const roomsData = dbRooms.getDataRange().getValues();
+      let found = false;
+      for (let i = 1; i < roomsData.length; i++) {
+        if (roomsData[i][0] == payload.roomCode) {
+          dbRooms.getRange(i + 1, 3).setValue(JSON.stringify(payload.criteria));
+          found = true;
+          break;
+        }
+      }
+      if (!found) return responseJson({ status: "error", message: "ไม่พบห้องนี้" });
+      result.message = "Criteria saved";
+    }
+    else if (action === "deleteRoom") {
+      const dbRooms = ss.getSheetByName("Rooms");
+      const dbUsers = ss.getSheetByName("Users");
+      const dbEvals = ss.getSheetByName("Evaluations");
+      // Delete bottom-up to avoid row-shift issues
+      const eData = dbEvals.getDataRange().getValues();
+      for (let i = eData.length - 1; i >= 1; i--) {
+        if (eData[i][0] == payload.roomCode) dbEvals.deleteRow(i + 1);
+      }
+      const uData = dbUsers.getDataRange().getValues();
+      for (let i = uData.length - 1; i >= 1; i--) {
+        if (uData[i][0] == payload.roomCode) dbUsers.deleteRow(i + 1);
+      }
+      const rData = dbRooms.getDataRange().getValues();
+      for (let i = rData.length - 1; i >= 1; i--) {
+        if (rData[i][0] == payload.roomCode) dbRooms.deleteRow(i + 1);
+      }
+      result.message = "Room deleted";
+    }
     else if (action === "submitEvaluation") {
       const db = ss.getSheetByName("Evaluations");
+      // Scores stored as JSON string for variable-length criteria support
       db.appendRow([
-        payload.roomCode, 
-        payload.evaluator, 
-        payload.evaluatee, 
-        payload.scores[0], 
-        payload.scores[1], 
-        payload.scores[2], 
-        payload.scores[3], 
-        payload.scores[4], 
+        payload.roomCode,
+        payload.evaluator,
+        payload.evaluatee,
+        JSON.stringify(payload.scores),
         new Date().toISOString()
       ]);
     }
