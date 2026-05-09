@@ -144,6 +144,14 @@ function doPost(e) {
           dbUsers.deleteRow(i + 1);
         }
       }
+      // Also remove every evaluation record where this user was the evaluator
+      const dbEvals = ss.getSheetByName("Evaluations");
+      const evalsData = dbEvals.getDataRange().getValues();
+      for (let i = evalsData.length - 1; i >= 1; i--) {
+        if (evalsData[i][0] == payload.roomCode && evalsData[i][1] == payload.userName) {
+          dbEvals.deleteRow(i + 1);
+        }
+      }
       result.message = "User deleted";
     }
     else if (action === "getAllRooms") {
