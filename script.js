@@ -1036,6 +1036,7 @@ function renderAdminSummary() {
    // ── Tab bar ──────────────────────────────────────────────────────
    const tabDefs = [
       { id: 'rank',    label: '👑 สรุป Ranking' },
+      { id: 'avg',     label: '📊 สรุปคะแนนเฉลี่ย' },
       { id: 'members', label: '👥 สรุปผลทุกสมาชิก' }
    ];
 
@@ -1043,7 +1044,9 @@ function renderAdminSummary() {
    tabBar.className = 'flex rounded-xl overflow-hidden border border-gray-200 mb-5 shadow-sm';
 
    const rankPanel   = document.createElement('div');
+   const avgPanel    = document.createElement('div');
    const memberPanel = document.createElement('div');
+   avgPanel.classList.add('hidden');
    memberPanel.classList.add('hidden');
 
    const setTabStyles = (activeId) => {
@@ -1053,6 +1056,7 @@ function renderAdminSummary() {
             isActive ? 'bg-blue-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`;
       });
       rankPanel.classList.toggle('hidden',   activeId !== 'rank');
+      avgPanel.classList.toggle('hidden',    activeId !== 'avg');
       memberPanel.classList.toggle('hidden', activeId !== 'members');
    };
 
@@ -1147,7 +1151,39 @@ function renderAdminSummary() {
    rankPanel.appendChild(rankWrap);
    container.appendChild(rankPanel);
 
-   // ── Tab 2: Per-member expandable score table ─────────────────────
+   // ── Tab 2: Average score per category (room-wide) ────────────────
+   const avgTitle = document.createElement('h3');
+   avgTitle.className = 'font-bold text-lg text-gray-800 mb-4 border-b pb-2';
+   avgTitle.textContent = '📊 คะแนนเฉลี่ยแต่ละหัวข้อ (ภาพรวมทั้งห้อง)';
+   avgPanel.appendChild(avgTitle);
+
+   const allEvals = state.evaluations;
+   const avgGrid  = document.createElement('div');
+   avgGrid.className = 'grid grid-cols-1 md:grid-cols-2 gap-4';
+
+   if (allEvals.length === 0) {
+      avgGrid.innerHTML = '<p class="col-span-2 text-gray-400 text-sm text-center py-6">ยังไม่มีข้อมูลการประเมิน</p>';
+   } else {
+      criteria.forEach((crit, qi) => {
+         const sum = allEvals.reduce((s, ev) => s + Number(ev.scores[qi] || 0), 0);
+         const avg = (sum / allEvals.length).toFixed(2);
+         const displayTitle = crit.title.replace(/^\d+\.\s*/, '');
+
+         const card = document.createElement('div');
+         card.className = 'bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between gap-3';
+         card.innerHTML = `
+            <h4 class="font-bold text-gray-800 text-sm">${escapeHtml(displayTitle)}</h4>
+            <div class="bg-blue-50 text-blue-800 font-bold px-3 py-1 rounded-lg whitespace-nowrap flex-shrink-0">
+               ${avg} <span class="text-xs text-blue-400 font-normal">/ 5</span>
+            </div>`;
+         avgGrid.appendChild(card);
+      });
+   }
+
+   avgPanel.appendChild(avgGrid);
+   container.appendChild(avgPanel);
+
+   // ── Tab 3: Per-member expandable score table ─────────────────────
    const memberHeading = document.createElement('h3');
    memberHeading.className = 'font-bold text-lg text-gray-800 mb-4 border-b pb-2';
    memberHeading.innerHTML = '<i class="fa-solid fa-users text-indigo-500 mr-2"></i>สรุปผลทุกสมาชิก';
