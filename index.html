@@ -140,9 +140,6 @@
            <button onclick="toggleEvalMonitor()" class="bg-teal-600 hover:bg-teal-700 text-white px-5 py-2 rounded-lg font-semibold shadow">
              <i class="fa-solid fa-table-cells-large mr-2"></i> ตรวจสอบการประเมิน
            </button>
-           <button onclick="testMode()" class="bg-gray-800 hover:bg-gray-900 text-white px-5 py-2 rounded-lg font-semibold shadow text-sm">
-             <i class="fa-solid fa-flask mr-2"></i> Test Mode (จำลองข้อมูล)
-           </button>
            <button onclick="toggleCriteriaEditor()" class="bg-purple-600 hover:bg-purple-700 text-white px-5 py-2 rounded-lg font-semibold shadow">
              <i class="fa-solid fa-list-check mr-2"></i> ตั้งค่าหัวข้อ
            </button>
@@ -423,12 +420,8 @@
            <!-- Rendered from JS -->
         </div>
 
-        <div class="glass-card bg-yellow-50 border-yellow-200 p-6">
-          <h3 class="font-bold text-lg text-yellow-800 mb-6 text-center"><i class="fa-solid fa-crown text-yellow-500 mr-2"></i>Ranking ห้อง (Top 3)</h3>
-          <div id="ranking-container" class="space-y-3">
-             <!-- Rendered from JS -->
-          </div>
-        </div>
+        <!-- Admin member summary with expandable raw-score tables -->
+        <div id="admin-summary-container" class="hidden"></div>
 
       </div>
     </section>

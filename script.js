@@ -192,44 +192,6 @@ async function adminViewResult() {
    calculateResults();
 }
 
-async function testMode() {
-   if (!state.roomCode) { alert("กรุณาสร้างห้องก่อน"); return; }
-
-   if (!confirm("ระบบจะสุ่มชื่อคนและผลคะแนนใส่เข้าไปในห้องนี้ เพื่อทดสอบระบบ คุณต้องการทำต่อหรือไม่? (ใช้เวลาสักครู่)")) return;
-
-   showLoader(true);
-   const dummyUsers = ["สมชาย", "วิภาดา", "ธนพล"];
-
-   // 1. เอาดัมมี่จอยเข้าห้องทีละคน
-   for (let u of dummyUsers) {
-      await fetch(API_URL, {
-         method: 'POST',
-         body: JSON.stringify({ action: "joinRoom", roomCode: state.roomCode, userName: u })
-      });
-   }
-
-   // 2. ให้แต่ละคนประเมินเพื่อน
-   const criteriaCount = getActiveCriteria().length;
-   for (let evaluator of dummyUsers) {
-      for (let evaluatee of dummyUsers) {
-         if (evaluator === evaluatee) continue;
-         const scores = Array.from({ length: criteriaCount }, () => Math.floor(Math.random() * 3) + 3);
-         await fetch(API_URL, {
-            method: 'POST',
-            body: JSON.stringify({
-               action: "submitEvaluation",
-               roomCode: state.roomCode,
-               evaluator: evaluator,
-               evaluatee: evaluatee,
-               scores: scores
-            })
-         });
-      }
-   }
-   showLoader(false);
-   alert("จำลองข้อมูลเรียบร้อย! สามารถกดดูผลสรุปห้องนี้ได้เลย");
-}
-
 // ==========================================
 // 6. Room History (API-synced — all devices)
 // ==========================================
@@ -991,63 +953,173 @@ async function showResultSummary() {
 }
 
 function calculateResults() {
-   // กรองเฉพาะอันที่มีคนประเมินเรา
-   const myEvals = state.evaluations.filter(e => e.evaluatee === state.userName);
-   document.getElementById('result-user-name').innerText = "คุณ " + state.userName;
+   // Reset any display state left from a previous view
+   document.querySelector('#result-content > div.bg-gradient-to-r').style.display = '';
+   document.querySelector('#result-content > h3').style.display = '';
+   const avgContainer = document.getElementById('result-avg-container');
+   avgContainer.style.display = '';
+   document.getElementById('admin-summary-container').classList.add('hidden');
 
-   // ถ้าเป็น Admin เข้ามาดูเฉยๆ ปรับชื่อเป็นภาพรวม
-   if (state.userName === "Admin") {
-      document.getElementById('result-user-name').innerText = "Admin View";
-   }
+   const myEvals = state.evaluations.filter(e => e.evaluatee === state.userName);
+
+   document.getElementById('result-user-name').innerText =
+      state.userName === "Admin" ? "Admin View" : "คุณ " + state.userName;
 
    document.getElementById('result-loading').classList.add('hidden');
    document.getElementById('result-content').classList.remove('hidden');
 
-   // หากไม่มีใครประเมินเราเลย ไม่ว่าจะกรณีไหนก็ตาม
-   if (myEvals.length === 0 && state.userName !== "Admin") {
-      document.getElementById('result-total-score').innerText = "0";
-      document.getElementById('result-avg-container').innerHTML = `<p class="col-span-2 text-center text-gray-500 py-6">ยังไม่มีคะแนนประเมินของคุณ</p>`;
-      calculateRanking(); // ทำ Ranking ล่างสุดต่อเผื่อมีของคนอื่น
-      return;
-   }
-
-   let totalScoreAll = 0;
-   const avgContainer = document.getElementById('result-avg-container');
-   avgContainer.innerHTML = '';
-
-   if (state.userName !== "Admin") {
-      const criteria = getActiveCriteria();
-      // คำนวณคะแนนของตัวเอง
-      for (let q = 0; q < criteria.length; q++) {
-         let sum = 0;
-         myEvals.forEach(ev => sum += Number(ev.scores[q] || 0));
-         let avg = (sum / myEvals.length).toFixed(2);
-         totalScoreAll += sum;
-
-         // Strip leading "N. " numbering if present, otherwise show full title
-         const displayTitle = criteria[q].title.replace(/^\d+\.\s*/, '');
-         avgContainer.innerHTML += `
-             <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
-                <div>
-                  <h4 class="font-bold text-gray-800 text-sm truncate">${displayTitle}</h4>
-                </div>
-                <div class="bg-blue-50 text-blue-800 font-bold px-3 py-1 rounded-lg">
-                  ${avg} <span class="text-xs text-blue-400 font-normal">/ 5</span>
-                </div>
-             </div>
-          `;
-      }
-      document.getElementById('result-total-score').innerText = totalScoreAll;
-      document.getElementById('result-max-score').innerText = (myEvals.length * criteria.length * 5);
-   } else {
-      // Admin view (Hide My Score section to save space)
+   if (state.userName === "Admin") {
+      // Admin view: hide personal score panel, render member summary instead
       document.querySelector('#result-content > div.bg-gradient-to-r').style.display = 'none';
       document.querySelector('#result-content > h3').style.display = 'none';
       avgContainer.style.display = 'none';
+      renderAdminSummary();
+      return;
    }
 
-   // ------------------ Calculate Ranking ------------------
-   calculateRanking();
+   // ── User view ──────────────────────────────────────────
+   if (myEvals.length === 0) {
+      document.getElementById('result-total-score').innerText = "0";
+      avgContainer.innerHTML = `<p class="col-span-2 text-center text-gray-500 py-6">ยังไม่มีคะแนนประเมินของคุณ</p>`;
+      return;
+   }
+
+   const criteria = getActiveCriteria();
+   let totalScoreAll = 0;
+   avgContainer.innerHTML = '';
+
+   for (let q = 0; q < criteria.length; q++) {
+      let sum = 0;
+      myEvals.forEach(ev => sum += Number(ev.scores[q] || 0));
+      const avg = (sum / myEvals.length).toFixed(2);
+      totalScoreAll += sum;
+
+      const displayTitle = criteria[q].title.replace(/^\d+\.\s*/, '');
+      avgContainer.innerHTML += `
+         <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
+            <div>
+              <h4 class="font-bold text-gray-800 text-sm truncate">${displayTitle}</h4>
+            </div>
+            <div class="bg-blue-50 text-blue-800 font-bold px-3 py-1 rounded-lg">
+              ${avg} <span class="text-xs text-blue-400 font-normal">/ 5</span>
+            </div>
+         </div>
+      `;
+   }
+   document.getElementById('result-total-score').innerText = totalScoreAll;
+   document.getElementById('result-max-score').innerText = myEvals.length * criteria.length * 5;
+}
+
+// ── Admin member-summary with expandable raw-score tables ─────────────
+function renderAdminSummary() {
+   const container = document.getElementById('admin-summary-container');
+   container.classList.remove('hidden');
+   container.innerHTML = '';
+
+   const criteria = getActiveCriteria();
+   const members  = state.usersInRoom.filter(u => u !== 'Admin');
+
+   if (members.length === 0) {
+      container.innerHTML = '<p class="text-gray-400 text-center py-8">ยังไม่มีผู้เข้าร่วมในห้องนี้</p>';
+      return;
+   }
+
+   const heading = document.createElement('h3');
+   heading.className = 'font-bold text-lg text-gray-800 mb-4 border-b pb-2';
+   heading.innerHTML = '<i class="fa-solid fa-users text-indigo-500 mr-2"></i>สรุปผลทุกสมาชิก';
+   container.appendChild(heading);
+
+   members.forEach((member, idx) => {
+      const received   = state.evaluations.filter(ev => ev.evaluatee === member);
+      const totalScore = received.reduce(
+         (sum, ev) => sum + ev.scores.reduce((s, v) => s + Number(v || 0), 0), 0
+      );
+
+      // Outer wrapper — card + table share the same rounded border (no gap)
+      const wrap = document.createElement('div');
+      wrap.className = 'border border-gray-200 rounded-xl shadow-sm overflow-hidden mb-3';
+
+      // ── Card row ──
+      const card = document.createElement('div');
+      card.className = 'bg-white p-4 flex items-center justify-between';
+
+      const left = document.createElement('div');
+      left.className = 'flex items-center gap-3';
+      left.innerHTML = `
+         <div class="w-9 h-9 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 flex-shrink-0">
+            <i class="fa-solid fa-user text-sm"></i>
+         </div>
+         <div>
+            <p class="font-bold text-gray-800">${escapeHtml(member)}</p>
+            <p class="text-xs text-gray-400">รับการประเมิน ${received.length} ครั้ง</p>
+         </div>`;
+
+      const right = document.createElement('div');
+      right.className = 'flex items-center gap-3';
+
+      const scoreChip = document.createElement('span');
+      scoreChip.className = 'font-bold text-indigo-700 bg-indigo-50 px-3 py-1 rounded-lg text-sm';
+      scoreChip.textContent = `${totalScore} คะแนน`;
+
+      const toggleBtn = document.createElement('button');
+      toggleBtn.id = `toggle-btn-${idx}`;
+      toggleBtn.className = 'text-gray-400 hover:text-indigo-600 w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 transition text-xs font-bold select-none';
+      toggleBtn.textContent = '▶';
+      toggleBtn.addEventListener('click', () => toggleMemberDetail(idx));
+
+      right.appendChild(scoreChip);
+      right.appendChild(toggleBtn);
+      card.appendChild(left);
+      card.appendChild(right);
+
+      // ── Detail table ──
+      const detail = document.createElement('div');
+      detail.id = `member-detail-${idx}`;
+      detail.className = 'hidden border-t border-gray-100';
+
+      if (received.length === 0) {
+         detail.innerHTML = '<p class="text-gray-400 text-sm text-center py-4">ยังไม่มีผลการประเมิน</p>';
+      } else {
+         let rows = '';
+         received.forEach(ev => {
+            criteria.forEach((crit, qi) => {
+               const title = crit.title.replace(/^\d+\.\s*/, '');
+               const score = Number(ev.scores[qi] || 0);
+               rows += `
+                  <tr class="hover:bg-gray-50 transition">
+                     <td class="px-4 py-2.5 text-gray-700 font-medium border-b border-gray-50">${escapeHtml(ev.evaluator)}</td>
+                     <td class="px-4 py-2.5 text-gray-500 border-b border-gray-50">${escapeHtml(title)}</td>
+                     <td class="px-4 py-2.5 text-right border-b border-gray-50">
+                        <span class="font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">${score}</span>
+                     </td>
+                  </tr>`;
+            });
+         });
+         detail.innerHTML = `
+            <table class="w-full text-sm">
+               <thead class="bg-gray-50 text-xs text-gray-400 uppercase tracking-wide">
+                  <tr>
+                     <th class="px-4 py-2.5 text-left font-medium">ผู้ประเมิน</th>
+                     <th class="px-4 py-2.5 text-left font-medium">หัวข้อ</th>
+                     <th class="px-4 py-2.5 text-right font-medium">คะแนน</th>
+                  </tr>
+               </thead>
+               <tbody>${rows}</tbody>
+            </table>`;
+      }
+
+      wrap.appendChild(card);
+      wrap.appendChild(detail);
+      container.appendChild(wrap);
+   });
+}
+
+function toggleMemberDetail(idx) {
+   const detail = document.getElementById(`member-detail-${idx}`);
+   const btn    = document.getElementById(`toggle-btn-${idx}`);
+   const isOpen = !detail.classList.contains('hidden');
+   detail.classList.toggle('hidden', isOpen);
+   btn.textContent = isOpen ? '▶' : '▼';
 }
 
 // ==========================================
@@ -1057,56 +1129,3 @@ document.addEventListener('DOMContentLoaded', () => {
    setupPinBoxes();
 });
 
-function calculateRanking() {
-   // หายอดรวมของแต่ละคนในห้อง
-   let scoresMap = {};
-   state.usersInRoom.forEach(u => {
-      // ไม่จัดอันดับ Admin และข้ามชื่อเปล่าๆ
-      if (u !== "Admin") scoresMap[u] = { total: 0, count: 0 };
-   });
-
-   state.evaluations.forEach(ev => {
-      if (scoresMap[ev.evaluatee]) {
-         let theSum = ev.scores.reduce((a, b) => a + Number(b), 0);
-         scoresMap[ev.evaluatee].total += theSum;
-         scoresMap[ev.evaluatee].count += 1;
-      }
-   });
-
-   let rankingList = [];
-   for (let person in scoresMap) {
-      rankingList.push({ name: person, score: scoresMap[person].total });
-   }
-
-   // เรียงจากมากไปน้อย
-   rankingList.sort((a, b) => b.score - a.score);
-
-   // เอาแค่ Top 3
-   let top3 = rankingList.slice(0, 3);
-   const rankContainer = document.getElementById('ranking-container');
-   rankContainer.innerHTML = '';
-
-   if (top3.length === 0 || top3[0].score === 0) {
-      rankContainer.innerHTML = `<p class="col-span-2 text-center text-gray-500 py-6">ข้อมูลยังไม่เพียงพอสำหรับการสร้าง Ranking</p>`;
-      return;
-   }
-
-   top3.forEach((u, i) => {
-      let icon = "";
-      if (i === 0) icon = `อันดับ 1 <i class="fa-solid fa-trophy text-yellow-500"></i>`;
-      else if (i === 1) icon = `อันดับ 2 <i class="fa-solid fa-medal text-gray-400"></i>`;
-      else if (i === 2) icon = `อันดับ 3 <i class="fa-solid fa-medal text-orange-400"></i>`;
-
-      rankContainer.innerHTML += `
-         <div class="bg-white p-3 rounded-lg shadow-sm flex justify-between items-center border border-yellow-100 transform transition hover:scale-105">
-           <div class="flex items-center gap-3">
-             <div class="font-bold text-sm bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full w-24 text-center">
-                ${icon}
-             </div>
-             <p class="font-bold text-gray-800">${u.name}</p>
-           </div>
-           <div class="font-bold text-xl text-blue-900">${u.score} <span class="text-xs text-gray-400 font-normal">pts</span></div>
-         </div>
-      `;
-   });
-}
