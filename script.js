@@ -1080,32 +1080,56 @@ function renderAdminSummary() {
       if (received.length === 0) {
          detail.innerHTML = '<p class="text-gray-400 text-sm text-center py-4">ยังไม่มีผลการประเมิน</p>';
       } else {
-         let rows = '';
-         received.forEach(ev => {
-            criteria.forEach((crit, qi) => {
-               const title = crit.title.replace(/^\d+\.\s*/, '');
-               const score = Number(ev.scores[qi] || 0);
-               rows += `
-                  <tr class="hover:bg-gray-50 transition">
-                     <td class="px-4 py-2.5 text-gray-700 font-medium border-b border-gray-50">${escapeHtml(ev.evaluator)}</td>
-                     <td class="px-4 py-2.5 text-gray-500 border-b border-gray-50">${escapeHtml(title)}</td>
-                     <td class="px-4 py-2.5 text-right border-b border-gray-50">
-                        <span class="font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">${score}</span>
-                     </td>
-                  </tr>`;
-            });
+         // Pivot: one row per evaluator, one column per criterion + Total
+         const pivotRows = received.map(ev => ({
+            evaluator: ev.evaluator,
+            scores: criteria.map((_, qi) => Number(ev.scores[qi] || 0)),
+            total:  criteria.reduce((s, _, qi) => s + Number(ev.scores[qi] || 0), 0)
+         }));
+
+         let sortAsc = false; // default: highest total first
+
+         const buildTbody = () => {
+            const sorted = [...pivotRows].sort((a, b) =>
+               sortAsc ? a.total - b.total : b.total - a.total
+            );
+            return sorted.map(row => `
+               <tr class="hover:bg-gray-50 transition">
+                  <td class="px-4 py-2.5 font-semibold text-gray-700 border-b border-gray-100 whitespace-nowrap">${escapeHtml(row.evaluator)}</td>
+                  ${row.scores.map(s => `<td class="px-4 py-2.5 text-center text-gray-600 border-b border-gray-100">${s}</td>`).join('')}
+                  <td class="px-4 py-2.5 text-center border-b border-gray-100">
+                     <span class="font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">${row.total}</span>
+                  </td>
+               </tr>`).join('');
+         };
+
+         const colHeaders = criteria
+            .map(c => escapeHtml(c.title.replace(/^\d+\.\s*/, '')))
+            .map(h => `<th class="px-4 py-3 text-center font-semibold">${h}</th>`)
+            .join('');
+
+         const table = document.createElement('table');
+         table.className = 'w-full text-sm';
+         table.innerHTML = `
+            <thead class="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide border-b border-gray-200">
+               <tr>
+                  <th class="px-4 py-3 text-left font-semibold">Name</th>
+                  ${colHeaders}
+                  <th class="px-4 py-3 text-center font-semibold cursor-pointer select-none group whitespace-nowrap" data-sort-total>
+                     Total <span class="text-indigo-400 group-hover:text-indigo-600 transition">↓</span>
+                  </th>
+               </tr>
+            </thead>
+            <tbody>${buildTbody()}</tbody>`;
+
+         // Sortable Total column
+         table.querySelector('[data-sort-total]').addEventListener('click', function () {
+            sortAsc = !sortAsc;
+            this.querySelector('span').textContent = sortAsc ? '↑' : '↓';
+            table.querySelector('tbody').innerHTML = buildTbody();
          });
-         detail.innerHTML = `
-            <table class="w-full text-sm">
-               <thead class="bg-gray-50 text-xs text-gray-400 uppercase tracking-wide">
-                  <tr>
-                     <th class="px-4 py-2.5 text-left font-medium">ผู้ประเมิน</th>
-                     <th class="px-4 py-2.5 text-left font-medium">หัวข้อ</th>
-                     <th class="px-4 py-2.5 text-right font-medium">คะแนน</th>
-                  </tr>
-               </thead>
-               <tbody>${rows}</tbody>
-            </table>`;
+
+         detail.appendChild(table);
       }
 
       wrap.appendChild(card);
