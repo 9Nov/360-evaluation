@@ -1024,7 +1024,7 @@ function renderAdminSummary() {
       return;
    }
 
-   // Pre-compute totals once; sort highest first — shared by both sections
+   // Pre-compute totals once; sorted highest-first — shared by both tabs
    const ranked = members.map(member => {
       const received = state.evaluations.filter(ev => ev.evaluatee === member);
       const total    = received.reduce(
@@ -1033,99 +1033,127 @@ function renderAdminSummary() {
       return { member, received, total };
    }).sort((a, b) => b.total - a.total);
 
-   // ── Section 1: Ranking ───────────────────────────────────────────
-   const rankSection = document.createElement('div');
-   rankSection.className = 'mb-6';
+   // ── Tab bar ──────────────────────────────────────────────────────
+   const tabDefs = [
+      { id: 'rank',    label: '👑 สรุป Ranking' },
+      { id: 'members', label: '👥 สรุปผลทุกสมาชิก' }
+   ];
 
-   const rankHeading = document.createElement('h3');
-   rankHeading.className = 'font-bold text-lg text-gray-800 mb-3 border-b pb-2';
-   rankHeading.innerHTML = '<i class="fa-solid fa-crown text-yellow-500 mr-2"></i>สรุป Ranking';
-   rankSection.appendChild(rankHeading);
+   const tabBar = document.createElement('div');
+   tabBar.className = 'flex rounded-xl overflow-hidden border border-gray-200 mb-5 shadow-sm';
+
+   const rankPanel   = document.createElement('div');
+   const memberPanel = document.createElement('div');
+   memberPanel.classList.add('hidden');
+
+   const setTabStyles = (activeId) => {
+      tabBtns.forEach((btn, i) => {
+         const isActive = tabDefs[i].id === activeId;
+         btn.className = `flex-1 py-2.5 text-sm font-semibold transition ${
+            isActive ? 'bg-blue-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`;
+      });
+      rankPanel.classList.toggle('hidden',   activeId !== 'rank');
+      memberPanel.classList.toggle('hidden', activeId !== 'members');
+   };
+
+   // Build buttons first (referenced in setTabStyles)
+   const tabBtns = tabDefs.map((def, i) => {
+      const btn = document.createElement('button');
+      btn.textContent = def.label;
+      btn.addEventListener('click', () => setTabStyles(def.id));
+      tabBar.appendChild(btn);
+      return btn;
+   });
+   setTabStyles('rank'); // default: Tab 1 active
+
+   container.appendChild(tabBar);
+
+   // ── Tab 1: Ranking ───────────────────────────────────────────────
+   const RANK_META = [
+      { text: 'อันดับ 1 🏆', cls: 'bg-yellow-100 text-yellow-800 border border-yellow-300' },
+      { text: 'อันดับ 2 🥈', cls: 'bg-gray-100  text-gray-700   border border-gray-300'   },
+      { text: 'อันดับ 3 🥉', cls: 'bg-orange-100 text-orange-700 border border-orange-300' },
+   ];
+
+   const rankWrap = document.createElement('div');
+   rankWrap.className = 'bg-amber-50 border border-amber-200 rounded-2xl p-6';
+
+   const rankTitle = document.createElement('h3');
+   rankTitle.className = 'font-bold text-amber-900 text-lg mb-4 text-center';
+   rankTitle.textContent = '👑 Ranking ห้อง';
+   rankWrap.appendChild(rankTitle);
 
    // Filter buttons: Top 1 / Top 3 / All  (default: Top 3)
    let activeFilter = 3;
-   const filterDefs = [{ label: 'Top 1', value: 1 }, { label: 'Top 3', value: 3 }, { label: 'All', value: 0 }];
-   const rankList   = document.createElement('div');
-   rankList.className = 'space-y-2 mt-3';
+   const filterDefs  = [{ label: 'Top 1', n: 1 }, { label: 'Top 3', n: 3 }, { label: 'All', n: 0 }];
+   const rankListEl  = document.createElement('div');
+   rankListEl.className = 'space-y-3';
 
-   const MEDAL = ['🥇', '🥈', '🥉'];
-
-   const renderRankList = () => {
-      rankList.innerHTML = '';
+   const renderRankItems = () => {
+      rankListEl.innerHTML = '';
       const shown = activeFilter === 0 ? ranked : ranked.slice(0, Math.min(activeFilter, ranked.length));
       shown.forEach((item, i) => {
-         const rank = i + 1;
-         const row = document.createElement('div');
-         row.className = 'flex items-center justify-between bg-white border border-gray-100 rounded-xl px-4 py-3 shadow-sm';
+         const meta = RANK_META[i];
 
-         const leftSpan = document.createElement('div');
-         leftSpan.className = 'flex items-center gap-3';
+         const card = document.createElement('div');
+         card.className = 'bg-white border border-yellow-100 rounded-xl px-4 py-3 shadow-sm flex items-center gap-4';
 
-         const medal = document.createElement('span');
-         medal.className = 'text-xl w-8 text-center flex-shrink-0';
-         if (MEDAL[i]) {
-            medal.textContent = MEDAL[i];
-         } else {
-            medal.innerHTML = `<span class="text-sm font-bold text-gray-400">${rank}</span>`;
-         }
+         // Rank badge
+         const badge = document.createElement('div');
+         badge.className = `font-bold text-sm px-3 py-1.5 rounded-full flex-shrink-0 text-center ${
+            meta ? meta.cls : 'bg-gray-50 text-gray-500 border border-gray-200'}`;
+         badge.textContent = meta ? meta.text : `อันดับ ${i + 1}`;
 
-         const name = document.createElement('span');
-         name.className = 'font-bold text-gray-800';
-         name.textContent = item.member;
+         // Name
+         const nameEl = document.createElement('span');
+         nameEl.className = 'flex-1 font-bold text-gray-800 text-base';
+         nameEl.textContent = item.member;
 
-         leftSpan.appendChild(medal);
-         leftSpan.appendChild(name);
+         // Score
+         const scoreEl = document.createElement('span');
+         scoreEl.className = 'font-bold text-blue-700 text-base whitespace-nowrap';
+         scoreEl.textContent = `${item.total} pts`;
 
-         const chip = document.createElement('span');
-         chip.className = 'font-bold text-indigo-700 bg-indigo-50 px-3 py-1 rounded-lg text-sm';
-         chip.textContent = `${item.total} คะแนน`;
-
-         row.appendChild(leftSpan);
-         row.appendChild(chip);
-         rankList.appendChild(row);
+         card.appendChild(badge);
+         card.appendChild(nameEl);
+         card.appendChild(scoreEl);
+         rankListEl.appendChild(card);
       });
    };
 
-   // Build filter button row
    const filterRow = document.createElement('div');
-   filterRow.className = 'flex gap-2';
+   filterRow.className = 'flex gap-2 justify-center mb-4';
    const filterBtns = filterDefs.map(f => {
       const btn = document.createElement('button');
-      const setStyle = (active) => {
-         btn.className = `px-4 py-1.5 rounded-full text-sm font-semibold transition border ${
-            active ? 'bg-indigo-600 text-white border-indigo-600'
-                   : 'bg-white text-gray-500 border-gray-200 hover:border-indigo-300 hover:text-indigo-600'}`;
+      const applyStyle = (active) => {
+         btn.className = `px-4 py-1.5 rounded-full text-sm font-semibold border transition ${
+            active ? 'bg-amber-500 text-white border-amber-500'
+                   : 'bg-white text-gray-500 border-gray-200 hover:border-amber-400 hover:text-amber-700'}`;
       };
+      applyStyle(f.n === activeFilter);
       btn.textContent = f.label;
-      setStyle(f.value === activeFilter);
       btn.addEventListener('click', () => {
-         activeFilter = f.value;
-         filterBtns.forEach((b, bi) => setStyle(filterDefs[bi].value === activeFilter));
-         renderRankList();
+         activeFilter = f.n;
+         filterBtns.forEach((b, bi) => applyStyle(filterDefs[bi].n === activeFilter));
+         renderRankItems();
       });
       filterRow.appendChild(btn);
       return btn;
    });
 
-   rankSection.appendChild(filterRow);
-   rankSection.appendChild(rankList);
-   renderRankList();
-   container.appendChild(rankSection);
+   rankWrap.appendChild(filterRow);
+   rankWrap.appendChild(rankListEl);
+   renderRankItems();
+   rankPanel.appendChild(rankWrap);
+   container.appendChild(rankPanel);
 
-   // Divider between sections
-   const hr = document.createElement('hr');
-   hr.className = 'my-6 border-gray-200';
-   container.appendChild(hr);
-
-   // ── Section 2: Per-member expandable score table ─────────────────
+   // ── Tab 2: Per-member expandable score table ─────────────────────
    const memberHeading = document.createElement('h3');
    memberHeading.className = 'font-bold text-lg text-gray-800 mb-4 border-b pb-2';
    memberHeading.innerHTML = '<i class="fa-solid fa-users text-indigo-500 mr-2"></i>สรุปผลทุกสมาชิก';
-   container.appendChild(memberHeading);
+   memberPanel.appendChild(memberHeading);
 
    ranked.forEach(({ member, received, total: totalScore }, idx) => {
-
-      // Outer wrapper — card + table share the same rounded border (no gap)
       const wrap = document.createElement('div');
       wrap.className = 'border border-gray-200 rounded-xl shadow-sm overflow-hidden mb-3';
 
@@ -1162,7 +1190,7 @@ function renderAdminSummary() {
       card.appendChild(left);
       card.appendChild(right);
 
-      // ── Detail table ──
+      // ── Detail table (pivot: one row per evaluator) ──
       const detail = document.createElement('div');
       detail.id = `member-detail-${idx}`;
       detail.className = 'hidden border-t border-gray-100';
@@ -1170,14 +1198,13 @@ function renderAdminSummary() {
       if (received.length === 0) {
          detail.innerHTML = '<p class="text-gray-400 text-sm text-center py-4">ยังไม่มีผลการประเมิน</p>';
       } else {
-         // Pivot: one row per evaluator, one column per criterion + Total
          const pivotRows = received.map(ev => ({
             evaluator: ev.evaluator,
             scores: criteria.map((_, qi) => Number(ev.scores[qi] || 0)),
             total:  criteria.reduce((s, _, qi) => s + Number(ev.scores[qi] || 0), 0)
          }));
 
-         let sortAsc = false; // default: highest total first
+         let sortAsc = false;
 
          const buildTbody = () => {
             const sorted = [...pivotRows].sort((a, b) =>
@@ -1212,7 +1239,6 @@ function renderAdminSummary() {
             </thead>
             <tbody>${buildTbody()}</tbody>`;
 
-         // Sortable Total column
          table.querySelector('[data-sort-total]').addEventListener('click', function () {
             sortAsc = !sortAsc;
             this.querySelector('span').textContent = sortAsc ? '↑' : '↓';
@@ -1224,8 +1250,10 @@ function renderAdminSummary() {
 
       wrap.appendChild(card);
       wrap.appendChild(detail);
-      container.appendChild(wrap);
+      memberPanel.appendChild(wrap);
    });
+
+   container.appendChild(memberPanel);
 }
 
 function toggleMemberDetail(idx) {
