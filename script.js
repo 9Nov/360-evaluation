@@ -1024,16 +1024,106 @@ function renderAdminSummary() {
       return;
    }
 
-   const heading = document.createElement('h3');
-   heading.className = 'font-bold text-lg text-gray-800 mb-4 border-b pb-2';
-   heading.innerHTML = '<i class="fa-solid fa-users text-indigo-500 mr-2"></i>สรุปผลทุกสมาชิก';
-   container.appendChild(heading);
-
-   members.forEach((member, idx) => {
-      const received   = state.evaluations.filter(ev => ev.evaluatee === member);
-      const totalScore = received.reduce(
+   // Pre-compute totals once; sort highest first — shared by both sections
+   const ranked = members.map(member => {
+      const received = state.evaluations.filter(ev => ev.evaluatee === member);
+      const total    = received.reduce(
          (sum, ev) => sum + ev.scores.reduce((s, v) => s + Number(v || 0), 0), 0
       );
+      return { member, received, total };
+   }).sort((a, b) => b.total - a.total);
+
+   // ── Section 1: Ranking ───────────────────────────────────────────
+   const rankSection = document.createElement('div');
+   rankSection.className = 'mb-6';
+
+   const rankHeading = document.createElement('h3');
+   rankHeading.className = 'font-bold text-lg text-gray-800 mb-3 border-b pb-2';
+   rankHeading.innerHTML = '<i class="fa-solid fa-crown text-yellow-500 mr-2"></i>สรุป Ranking';
+   rankSection.appendChild(rankHeading);
+
+   // Filter buttons: Top 1 / Top 3 / All  (default: Top 3)
+   let activeFilter = 3;
+   const filterDefs = [{ label: 'Top 1', value: 1 }, { label: 'Top 3', value: 3 }, { label: 'All', value: 0 }];
+   const rankList   = document.createElement('div');
+   rankList.className = 'space-y-2 mt-3';
+
+   const MEDAL = ['🥇', '🥈', '🥉'];
+
+   const renderRankList = () => {
+      rankList.innerHTML = '';
+      const shown = activeFilter === 0 ? ranked : ranked.slice(0, Math.min(activeFilter, ranked.length));
+      shown.forEach((item, i) => {
+         const rank = i + 1;
+         const row = document.createElement('div');
+         row.className = 'flex items-center justify-between bg-white border border-gray-100 rounded-xl px-4 py-3 shadow-sm';
+
+         const leftSpan = document.createElement('div');
+         leftSpan.className = 'flex items-center gap-3';
+
+         const medal = document.createElement('span');
+         medal.className = 'text-xl w-8 text-center flex-shrink-0';
+         if (MEDAL[i]) {
+            medal.textContent = MEDAL[i];
+         } else {
+            medal.innerHTML = `<span class="text-sm font-bold text-gray-400">${rank}</span>`;
+         }
+
+         const name = document.createElement('span');
+         name.className = 'font-bold text-gray-800';
+         name.textContent = item.member;
+
+         leftSpan.appendChild(medal);
+         leftSpan.appendChild(name);
+
+         const chip = document.createElement('span');
+         chip.className = 'font-bold text-indigo-700 bg-indigo-50 px-3 py-1 rounded-lg text-sm';
+         chip.textContent = `${item.total} คะแนน`;
+
+         row.appendChild(leftSpan);
+         row.appendChild(chip);
+         rankList.appendChild(row);
+      });
+   };
+
+   // Build filter button row
+   const filterRow = document.createElement('div');
+   filterRow.className = 'flex gap-2';
+   const filterBtns = filterDefs.map(f => {
+      const btn = document.createElement('button');
+      const setStyle = (active) => {
+         btn.className = `px-4 py-1.5 rounded-full text-sm font-semibold transition border ${
+            active ? 'bg-indigo-600 text-white border-indigo-600'
+                   : 'bg-white text-gray-500 border-gray-200 hover:border-indigo-300 hover:text-indigo-600'}`;
+      };
+      btn.textContent = f.label;
+      setStyle(f.value === activeFilter);
+      btn.addEventListener('click', () => {
+         activeFilter = f.value;
+         filterBtns.forEach((b, bi) => setStyle(filterDefs[bi].value === activeFilter));
+         renderRankList();
+      });
+      filterRow.appendChild(btn);
+      return btn;
+   });
+
+   rankSection.appendChild(filterRow);
+   rankSection.appendChild(rankList);
+   renderRankList();
+   container.appendChild(rankSection);
+
+   // Divider between sections
+   const hr = document.createElement('hr');
+   hr.className = 'my-6 border-gray-200';
+   container.appendChild(hr);
+
+   // ── Section 2: Per-member expandable score table ─────────────────
+   const memberHeading = document.createElement('h3');
+   memberHeading.className = 'font-bold text-lg text-gray-800 mb-4 border-b pb-2';
+   memberHeading.innerHTML = '<i class="fa-solid fa-users text-indigo-500 mr-2"></i>สรุปผลทุกสมาชิก';
+   container.appendChild(memberHeading);
+
+   ranked.forEach(({ member, received, total: totalScore }, idx) => {
 
       // Outer wrapper — card + table share the same rounded border (no gap)
       const wrap = document.createElement('div');
