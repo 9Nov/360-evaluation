@@ -185,9 +185,34 @@ async function saveActivityName() {
 
 async function adminViewResult() {
    if (!state.roomCode) return;
-   // Admin ใช้ชื่อจำลองเพื่อเข้าไปดูผล
+
+   // Fetch fresh data first (without switching to Admin view yet)
+   const res = await callAPI("getRoomData", { roomCode: state.roomCode });
+   if (!res || res.status !== "success") return;
+   state.usersInRoom  = res.users  || [];
+   state.evaluations  = res.evaluations || [];
+   state.roomCriteria = res.criteria || null;
+   state.activityName = res.activityName || '';
+
+   // Lock: all members must have evaluated every other member before results are visible
+   const users = state.usersInRoom;
+   const n = users.length;
+   if (n > 1) {
+      const totalNeeded = n * (n - 1);
+      const doneSet = new Set(state.evaluations.map(e => `${e.evaluator}||${e.evaluatee}`));
+      const completed = [...doneSet].filter(key => {
+         const [ev, ee] = key.split('||');
+         return users.includes(ev) && users.includes(ee);
+      }).length;
+      const remaining = totalNeeded - completed;
+      if (remaining > 0) {
+         alert(`ยังไม่สามารถดูผลได้\nยังมีการประเมินที่ยังไม่เสร็จสิ้นอีก ${remaining} รายการ\n\nสามารถตรวจสอบความคืบหน้าได้ที่ปุ่ม "ติดตามการประเมิน"`);
+         return;
+      }
+   }
+
+   // All done — enter admin result view
    state.userName = "Admin";
-   await fetchRoomData();
    showSection('sec-result');
    calculateResults();
 }
