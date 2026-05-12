@@ -716,17 +716,22 @@ function renderLobby() {
    const peers = state.usersInRoom.filter(u => u !== state.userName);
    document.getElementById('lobby-count').innerText = state.usersInRoom.length;
 
+   const btn  = document.getElementById('btn-final-submit');
+   const hint = document.getElementById('lock-hint');
+
    if (peers.length === 0) {
       container.innerHTML = `<p class="text-gray-500 text-center py-6">ยังไม่มีผู้เข้าร่วมคนอื่นในห้องนี้</p>`;
+      btn.classList.add('hidden');
+      hint.classList.add('hidden');
       return;
    }
 
-   let allEvaluated = true;
+   let pending = 0;
 
    peers.forEach(peer => {
       // เช็คว่าเราเคยประเมินคนนี้ใน room นี้หรือยัง
       const hasEvaluated = state.evaluations.some(e => e.evaluator === state.userName && e.evaluatee === peer);
-      if (!hasEvaluated) allEvaluated = false;
+      if (!hasEvaluated) pending++;
 
       const el = document.createElement('div');
       el.className = `user-card glass-card p-4 flex justify-between items-center ${hasEvaluated ? 'evaluated' : ''}`;
@@ -738,7 +743,7 @@ function renderLobby() {
            </div>
            <p class="font-semibold text-gray-800">${peer}</p>
          </div>
-         <button class="${hasEvaluated ? 'bg-green-100 text-green-700' : 'btn-primary px-4 py-2 text-sm text-white'} rounded shadow" 
+         <button class="${hasEvaluated ? 'bg-green-100 text-green-700' : 'btn-primary px-4 py-2 text-sm text-white'} rounded shadow"
                  ${hasEvaluated ? 'disabled' : `onclick="openEvaluationForm('${peer}')"`}>
             ${hasEvaluated ? 'ประเมินแล้ว' : 'ทำการประเมิน'}
          </button>
@@ -746,10 +751,18 @@ function renderLobby() {
       container.appendChild(el);
    });
 
-   if (allEvaluated && peers.length > 0) {
-      document.getElementById('btn-final-submit').classList.remove('hidden');
+   btn.classList.remove('hidden');
+   if (pending === 0) {
+      btn.disabled = false;
+      btn.className = 'bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-8 rounded-full shadow-lg transition transform hover:scale-105';
+      btn.innerHTML = 'ดูสรุปผลการประเมิน <i class="fa-solid fa-lock-open ml-2"></i>';
+      hint.classList.add('hidden');
    } else {
-      document.getElementById('btn-final-submit').classList.add('hidden');
+      btn.disabled = true;
+      btn.className = 'bg-gray-200 text-gray-400 font-bold py-3 px-8 rounded-full cursor-not-allowed transition';
+      btn.innerHTML = `<i class="fa-solid fa-lock mr-2"></i> ดูสรุปผลการประเมิน`;
+      hint.classList.remove('hidden');
+      hint.textContent = `กรุณาประเมินให้ครบทุกคนก่อน (ยังเหลืออีก ${pending} คน)`;
    }
 }
 
@@ -947,6 +960,16 @@ async function deleteRoomFromHistory(code) {
 // 14. Result Summary & Ranking Logic
 // ==========================================
 async function showResultSummary() {
+   if (state.userName && state.userName !== 'Admin') {
+      const peers = state.usersInRoom.filter(u => u !== state.userName);
+      const pending = peers.filter(p =>
+         !state.evaluations.some(e => e.evaluator === state.userName && e.evaluatee === p)
+      ).length;
+      if (pending > 0) {
+         alert(`กรุณาประเมินให้ครบทุกคนก่อน (ยังเหลืออีก ${pending} คน)`);
+         return;
+      }
+   }
    showSection('sec-result');
    await fetchRoomData();
    calculateResults();
