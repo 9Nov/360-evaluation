@@ -1037,16 +1037,19 @@ function renderAdminSummary() {
    const tabDefs = [
       { id: 'rank',    label: '👑 สรุป Ranking' },
       { id: 'avg',     label: '📊 สรุปคะแนนเฉลี่ย' },
+      { id: 'allAvg',  label: '📋 สรุปผลเฉลี่ยทุกสมาชิก' },
       { id: 'members', label: '👥 สรุปผลทุกสมาชิก' }
    ];
 
    const tabBar = document.createElement('div');
-   tabBar.className = 'flex rounded-xl overflow-hidden border border-gray-200 mb-5 shadow-sm';
+   tabBar.className = 'flex flex-wrap rounded-xl overflow-hidden border border-gray-200 mb-5 shadow-sm';
 
-   const rankPanel   = document.createElement('div');
-   const avgPanel    = document.createElement('div');
-   const memberPanel = document.createElement('div');
+   const rankPanel    = document.createElement('div');
+   const avgPanel     = document.createElement('div');
+   const allAvgPanel  = document.createElement('div');
+   const memberPanel  = document.createElement('div');
    avgPanel.classList.add('hidden');
+   allAvgPanel.classList.add('hidden');
    memberPanel.classList.add('hidden');
 
    const setTabStyles = (activeId) => {
@@ -1057,6 +1060,7 @@ function renderAdminSummary() {
       });
       rankPanel.classList.toggle('hidden',   activeId !== 'rank');
       avgPanel.classList.toggle('hidden',    activeId !== 'avg');
+      allAvgPanel.classList.toggle('hidden', activeId !== 'allAvg');
       memberPanel.classList.toggle('hidden', activeId !== 'members');
    };
 
@@ -1183,7 +1187,184 @@ function renderAdminSummary() {
    avgPanel.appendChild(avgGrid);
    container.appendChild(avgPanel);
 
-   // ── Tab 3: Per-member expandable score table ─────────────────────
+   // ── Tab 3: All-member per-criteria average table ──────────────────
+   (() => {
+      // Pre-compute per-member, per-criterion averages
+      const memberData = ranked.map(({ member, received }) => {
+         if (received.length === 0) {
+            return { member, avgs: criteria.map(() => null), totalAvg: null };
+         }
+         const avgs = criteria.map((_, qi) => {
+            const sum = received.reduce((s, ev) => s + Number(ev.scores[qi] || 0), 0);
+            return sum / received.length;
+         });
+         const totalAvg = avgs.reduce((s, v) => s + v, 0) / avgs.length;
+         return { member, avgs, totalAvg };
+      });
+
+      // Color scale per cell value
+      const cellBg = v => {
+         if (v === null) return '';
+         if (v >= 4.5) return 'bg-green-100 text-green-800';
+         if (v >= 3.0) return 'bg-yellow-50 text-yellow-800';
+         return 'bg-red-100 text-red-700';
+      };
+
+      // Sort state: column index (criteria indices 0..n-1, then n = totalAvg), direction
+      let sortCol = criteria.length; // default: Total Avg
+      let sortAsc = false;           // default: descending
+
+      const sortData = () => {
+         return [...memberData].sort((a, b) => {
+            const va = sortCol < criteria.length ? a.avgs[sortCol] : a.totalAvg;
+            const vb = sortCol < criteria.length ? b.avgs[sortCol] : b.totalAvg;
+            if (va === null && vb === null) return 0;
+            if (va === null) return 1;
+            if (vb === null) return -1;
+            return sortAsc ? va - vb : vb - va;
+         });
+      };
+
+      // Header labels
+      const colLabels = [...criteria.map(c => c.title.replace(/^\d+\.\s*/, '')), 'TOTAL AVG'];
+
+      // Build the panel
+      const title = document.createElement('h3');
+      title.className = 'font-bold text-lg text-gray-800 mb-3 border-b pb-2';
+      title.textContent = '📋 สรุปผลเฉลี่ยทุกสมาชิก';
+      allAvgPanel.appendChild(title);
+
+      // Export CSV button
+      const exportBtn = document.createElement('button');
+      exportBtn.className = 'mb-4 text-sm bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold shadow transition flex items-center gap-2';
+      exportBtn.innerHTML = '<i class="fa-solid fa-file-csv"></i> Export CSV';
+      exportBtn.addEventListener('click', () => {
+         const headers = ['Member', ...colLabels];
+         const rows = memberData.map(m => [
+            m.member,
+            ...m.avgs.map(v => v === null ? '-' : v.toFixed(2)),
+            m.totalAvg === null ? '-' : m.totalAvg.toFixed(2)
+         ]);
+         const csv = [headers, ...rows]
+            .map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
+            .join('\r\n');
+         const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+         const url  = URL.createObjectURL(blob);
+         const a    = Object.assign(document.createElement('a'), { href: url, download: `summary_${state.roomCode || 'room'}.csv` });
+         a.click();
+         URL.revokeObjectURL(url);
+      });
+      allAvgPanel.appendChild(exportBtn);
+
+      // Scrollable table wrapper
+      const wrapper = document.createElement('div');
+      wrapper.className = 'overflow-x-auto rounded-xl border border-gray-200 shadow-sm';
+
+      const table = document.createElement('table');
+      table.className = 'w-full text-sm border-collapse';
+
+      // Build header row
+      const thead = document.createElement('thead');
+      const headerRow = document.createElement('tr');
+      headerRow.className = 'bg-gray-50 text-xs text-gray-500 uppercase tracking-wide';
+
+      const thMember = document.createElement('th');
+      thMember.className = 'px-4 py-3 text-left font-semibold sticky left-0 bg-gray-50 z-10 cursor-pointer select-none whitespace-nowrap';
+      thMember.innerHTML = 'Member <span class="text-gray-300">⇅</span>';
+      thMember.addEventListener('click', () => {
+         // Sort by name (use avgs index = -1 sentinel via custom comparator)
+         sortAsc = (sortCol === -1) ? !sortAsc : false;
+         sortCol = -1;
+         renderTable();
+         updateHeaderArrows();
+      });
+      headerRow.appendChild(thMember);
+
+      const colThs = colLabels.map((label, ci) => {
+         const th = document.createElement('th');
+         th.className = `px-4 py-3 text-center font-semibold cursor-pointer select-none ${ci === criteria.length ? 'whitespace-nowrap' : ''}`;
+         th.dataset.col = ci;
+         th.innerHTML = `${label} <span class="sort-arrow text-indigo-300">↓</span>`;
+         th.addEventListener('click', () => {
+            sortAsc = (sortCol === ci) ? !sortAsc : false;
+            sortCol = ci;
+            renderTable();
+            updateHeaderArrows();
+         });
+         return th;
+      });
+      colThs.forEach(th => headerRow.appendChild(th));
+      thead.appendChild(headerRow);
+      table.appendChild(thead);
+
+      const tbody = document.createElement('tbody');
+      table.appendChild(tbody);
+      wrapper.appendChild(table);
+      allAvgPanel.appendChild(wrapper);
+
+      const updateHeaderArrows = () => {
+         colThs.forEach((th, ci) => {
+            const arrow = th.querySelector('.sort-arrow');
+            if (sortCol === ci) {
+               arrow.textContent = sortAsc ? '↑' : '↓';
+               arrow.className = 'sort-arrow text-indigo-600';
+            } else {
+               arrow.textContent = '↓';
+               arrow.className = 'sort-arrow text-gray-300';
+            }
+         });
+      };
+
+      const renderTable = () => {
+         tbody.innerHTML = '';
+         const sorted = sortCol === -1
+            ? [...memberData].sort((a, b) => sortAsc ? a.member.localeCompare(b.member) : b.member.localeCompare(a.member))
+            : sortData();
+         const topScore = sorted[0]?.totalAvg;
+
+         sorted.forEach((m, rowIdx) => {
+            const isTop = topScore !== null && m.totalAvg === topScore && topScore > 0;
+            const tr = document.createElement('tr');
+            tr.className = `border-t border-gray-100 transition ${isTop ? 'bg-amber-50' : rowIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:brightness-95`;
+
+            // Member name cell
+            const tdName = document.createElement('td');
+            tdName.className = `px-4 py-2.5 font-semibold text-gray-800 sticky left-0 z-10 ${isTop ? 'bg-amber-50' : rowIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`;
+            tdName.innerHTML = isTop
+               ? `${escapeHtml(m.member)} <span class="text-amber-500 text-xs ml-1">👑</span>`
+               : escapeHtml(m.member);
+            tr.appendChild(tdName);
+
+            // Criterion score cells
+            m.avgs.forEach(v => {
+               const td = document.createElement('td');
+               const colorCls = v !== null ? cellBg(v) : '';
+               td.className = `px-3 py-2 text-center`;
+               td.innerHTML = v !== null
+                  ? `<span class="inline-block px-2 py-0.5 rounded font-semibold text-xs ${colorCls}">${v.toFixed(2)}</span>`
+                  : '<span class="text-gray-300">-</span>';
+               tr.appendChild(td);
+            });
+
+            // Total avg cell
+            const tdTotal = document.createElement('td');
+            const totalColorCls = m.totalAvg !== null ? cellBg(m.totalAvg) : '';
+            tdTotal.className = 'px-3 py-2 text-center font-bold';
+            tdTotal.innerHTML = m.totalAvg !== null
+               ? `<span class="inline-block px-2 py-0.5 rounded font-bold text-sm ${totalColorCls}">${m.totalAvg.toFixed(2)}</span>`
+               : '<span class="text-gray-300">-</span>';
+            tr.appendChild(tdTotal);
+
+            tbody.appendChild(tr);
+         });
+      };
+
+      renderTable();
+      updateHeaderArrows();
+      container.appendChild(allAvgPanel);
+   })();
+
+   // ── Tab 4: Per-member expandable score table ─────────────────────
    const memberHeading = document.createElement('h3');
    memberHeading.className = 'font-bold text-lg text-gray-800 mb-4 border-b pb-2';
    memberHeading.innerHTML = '<i class="fa-solid fa-users text-indigo-500 mr-2"></i>สรุปผลทุกสมาชิก';
