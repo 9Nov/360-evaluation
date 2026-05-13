@@ -22,8 +22,10 @@ let state = {
    evaluations: [],
    targetEvaluatee: null,
    currentScores: [],
+   currentComments: [],   // one comment string per criterion
    roomCriteria: null,    // null = use default evaluationCriteria
-   activityName: ''       // display name for this room's activity
+   activityName: '',      // display name for this room's activity
+   requireComment: false  // admin-controlled: are comments mandatory?
 };
 
 let tempCriteria = []; // working copy inside the criteria editor
@@ -155,8 +157,11 @@ async function createRoom() {
       state.roomCode = randCode;
       state.roomCriteria = null;
       state.activityName = '';
+      state.requireComment = false;
       document.getElementById('display-room-code').innerText = randCode;
       document.getElementById('admin-activity-name').value = '';
+      document.getElementById('require-comment-toggle').checked = false;
+      updateRequireCommentLabel(false);
       document.getElementById('admin-room-info').classList.remove('hidden');
       document.getElementById('admin-users-panel').classList.add('hidden');
       document.getElementById('admin-eval-monitor').classList.add('hidden');
@@ -183,36 +188,38 @@ async function saveActivityName() {
    }
 }
 
+async function saveRequireComment(checked) {
+   if (!state.roomCode) {
+      // No room loaded yet — just update UI
+      updateRequireCommentLabel(checked);
+      return;
+   }
+   const res = await callAPI("updateRoomSettings", { roomCode: state.roomCode, requireComment: checked });
+   if (res && res.status === "success") {
+      state.requireComment = checked;
+      updateRequireCommentLabel(checked);
+   } else {
+      // Revert toggle on error
+      document.getElementById('require-comment-toggle').checked = !checked;
+      alert("เกิดข้อผิดพลาด: " + (res && res.message ? res.message : "ไม่สามารถบันทึกได้"));
+   }
+}
+
+function updateRequireCommentLabel(required) {
+   const label = document.getElementById('require-comment-label');
+   if (!label) return;
+   if (required) {
+      label.innerHTML = '<i class="fa-solid fa-circle text-red-500 mr-1 text-xs"></i> <span class="text-red-600 font-bold">บังคับกรอกข้อเสนอแนะ</span>';
+   } else {
+      label.innerHTML = '<i class="fa-solid fa-circle text-gray-300 mr-1 text-xs"></i> ไม่บังคับกรอกข้อเสนอแนะ';
+   }
+}
+
 async function adminViewResult() {
    if (!state.roomCode) return;
-
-   // Fetch fresh data first (without switching to Admin view yet)
-   const res = await callAPI("getRoomData", { roomCode: state.roomCode });
-   if (!res || res.status !== "success") return;
-   state.usersInRoom  = res.users  || [];
-   state.evaluations  = res.evaluations || [];
-   state.roomCriteria = res.criteria || null;
-   state.activityName = res.activityName || '';
-
-   // Lock: all members must have evaluated every other member before results are visible
-   const users = state.usersInRoom;
-   const n = users.length;
-   if (n > 1) {
-      const totalNeeded = n * (n - 1);
-      const doneSet = new Set(state.evaluations.map(e => `${e.evaluator}||${e.evaluatee}`));
-      const completed = [...doneSet].filter(key => {
-         const [ev, ee] = key.split('||');
-         return users.includes(ev) && users.includes(ee);
-      }).length;
-      const remaining = totalNeeded - completed;
-      if (remaining > 0) {
-         alert(`ยังไม่สามารถดูผลได้\nยังมีการประเมินที่ยังไม่เสร็จสิ้นอีก ${remaining} รายการ\n\nสามารถตรวจสอบความคืบหน้าได้ที่ปุ่ม "ติดตามการประเมิน"`);
-         return;
-      }
-   }
-
-   // All done — enter admin result view
+   // Admin always has unrestricted access to results
    state.userName = "Admin";
+   await fetchRoomData();
    showSection('sec-result');
    calculateResults();
 }
@@ -266,9 +273,12 @@ async function revisitRoom(code) {
    // Load room data (criteria + activityName) for the admin panel
    const res = await callAPI("getRoomData", { roomCode: code });
    if (res && res.status === "success") {
-      state.roomCriteria = res.criteria || null;
-      state.activityName = res.activityName || '';
+      state.roomCriteria   = res.criteria || null;
+      state.activityName   = res.activityName || '';
+      state.requireComment = res.requireComment === true;
       document.getElementById('admin-activity-name').value = state.activityName;
+      document.getElementById('require-comment-toggle').checked = state.requireComment;
+      updateRequireCommentLabel(state.requireComment);
    }
    window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -721,10 +731,11 @@ async function doJoinRoom(roomCode, userName, pin, pinGroup) {
 async function fetchRoomData() {
    const res = await callAPI("getRoomData", { roomCode: state.roomCode });
    if (res && res.status === "success") {
-      state.usersInRoom   = res.users;
-      state.evaluations   = res.evaluations;
-      state.roomCriteria  = res.criteria || null;
-      state.activityName  = res.activityName || '';
+      state.usersInRoom    = res.users;
+      state.evaluations    = res.evaluations;
+      state.roomCriteria   = res.criteria || null;
+      state.activityName   = res.activityName || '';
+      state.requireComment = res.requireComment === true;
       if (state.userName && state.userName !== "Admin") renderLobby();
    }
 }
@@ -795,8 +806,9 @@ function renderLobby() {
 // 11. Evaluation Logic
 // ==========================================
 function openEvaluationForm(peerName) {
-   state.targetEvaluatee = peerName;
-   state.currentScores = getActiveCriteria().map(() => 0);
+   state.targetEvaluatee  = peerName;
+   state.currentScores    = getActiveCriteria().map(() => 0);
+   state.currentComments  = getActiveCriteria().map(() => '');
    document.getElementById('eval-target-name').innerText = peerName;
    document.getElementById('btn-submit-eval').disabled = true;
    document.getElementById('btn-submit-eval').classList.add('opacity-50', 'cursor-not-allowed');
@@ -809,19 +821,37 @@ function renderQuestions() {
    const container = document.getElementById('eval-questions-container');
    container.innerHTML = '';
 
+   const isRequired   = state.requireComment;
+   const placeholder  = isRequired ? 'ข้อเสนอแนะ (จำเป็นต้องกรอก)' : 'ข้อเสนอแนะ (ไม่บังคับ)';
+   const borderCls    = isRequired ? 'border-red-300 focus:ring-red-300' : 'border-gray-200 focus:ring-blue-200';
+   const requiredMark = isRequired ? '<span class="text-red-500 ml-0.5">*</span>' : '';
+
    getActiveCriteria().forEach((crit, index) => {
-      let div = document.createElement('div');
+      const div = document.createElement('div');
       div.className = "mb-6 pb-6 border-b border-gray-100 last:border-0";
 
       let html = `<h4 class="font-bold text-gray-800">${crit.title}</h4>
                   <p class="text-sm text-gray-500 mb-3">${crit.desc}</p>
-                  <div class="flex justify-between max-w-sm mx-auto">`;
-      // สร้างปุ่มเรตติ้ง 1-5
+                  <div class="flex justify-between max-w-sm mx-auto mb-4">`;
+
+      // Rating buttons 1–5
       for (let i = 1; i <= 5; i++) {
          const isActive = state.currentScores[index] === i ? 'active' : '';
          html += `<div class="rating-btn ${isActive}" onclick="setScore(${index}, ${i})">${i}</div>`;
       }
-      html += `</div>`;
+
+      // Comment field
+      const safeVal = escapeHtml(state.currentComments[index] || '');
+      html += `</div>
+         <div class="mt-1">
+            <label class="text-xs font-semibold text-red-500">ข้อเสนอแนะ${requiredMark}</label>
+            <input type="text"
+               class="w-full mt-1 border ${borderCls} rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2"
+               placeholder="${placeholder}"
+               value="${safeVal}"
+               oninput="updateComment(${index}, this.value)">
+         </div>`;
+
       div.innerHTML = html;
       container.appendChild(div);
    });
@@ -833,8 +863,16 @@ function setScore(qIndex, score) {
    checkAllScores();
 }
 
+function updateComment(index, value) {
+   state.currentComments[index] = value;
+   checkAllScores();
+}
+
 function checkAllScores() {
-   const allFilled = state.currentScores.every(s => s > 0);
+   const allScored    = state.currentScores.every(s => s > 0);
+   const allCommented = !state.requireComment ||
+                        state.currentComments.every(c => c.trim() !== '');
+   const allFilled    = allScored && allCommented;
    const btn = document.getElementById('btn-submit-eval');
    if (allFilled) {
       btn.disabled = false;
@@ -847,11 +885,17 @@ function checkAllScores() {
 
 async function submitEvaluation(e) {
    e.preventDefault();
+   // Final guard: re-validate comments if required (defensive, button should already be disabled)
+   if (state.requireComment && state.currentComments.some(c => !c.trim())) {
+      alert('กรุณากรอกข้อเสนอแนะให้ครบทุกข้อ');
+      return;
+   }
    const res = await callAPI("submitEvaluation", {
-      roomCode: state.roomCode,
+      roomCode:  state.roomCode,
       evaluator: state.userName,
       evaluatee: state.targetEvaluatee,
-      scores: state.currentScores
+      scores:    state.currentScores,
+      comments:  state.currentComments
    });
 
    if (res && res.status === "success") {
