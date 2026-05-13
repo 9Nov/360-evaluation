@@ -130,17 +130,6 @@
           </button>
         </div>
 
-        <!-- Require Comment Toggle -->
-        <div class="mt-4 flex items-center justify-center gap-3">
-          <span id="require-comment-label" class="text-sm font-semibold text-gray-500">
-            <i class="fa-solid fa-circle text-gray-300 mr-1 text-xs"></i> ไม่บังคับกรอกข้อเสนอแนะ
-          </span>
-          <label class="relative inline-flex items-center cursor-pointer">
-            <input type="checkbox" id="require-comment-toggle" class="sr-only peer" onchange="saveRequireComment(this.checked)">
-            <div class="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-500"></div>
-          </label>
-        </div>
-
         <div class="flex justify-center flex-wrap gap-3 mt-6">
            <button onclick="adminViewResult()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg font-semibold shadow">
              <i class="fa-solid fa-ranking-star mr-2"></i> ดูผลสรุปห้องนี้
@@ -153,6 +142,9 @@
            </button>
            <button onclick="toggleCriteriaEditor()" class="bg-purple-600 hover:bg-purple-700 text-white px-5 py-2 rounded-lg font-semibold shadow">
              <i class="fa-solid fa-list-check mr-2"></i> ตั้งค่าหัวข้อ
+           </button>
+           <button onclick="toggleCommentSettings()" class="bg-pink-600 hover:bg-pink-700 text-white px-5 py-2 rounded-lg font-semibold shadow">
+             <i class="fa-solid fa-comment-dots mr-2"></i> ตั้งค่าข้อเสนอแนะ
            </button>
            <button onclick="deleteCurrentRoom()" class="bg-red-500 hover:bg-red-600 text-white px-5 py-2 rounded-lg font-semibold shadow">
              <i class="fa-solid fa-trash mr-2"></i> ลบห้องนี้
@@ -195,6 +187,24 @@
         <!-- Pending list -->
         <div id="eval-monitor-pending"></div>
 
+      </div>
+
+      <!-- Comment Settings Panel -->
+      <div id="admin-comment-panel" class="hidden glass-card p-6 mt-4 border border-pink-100">
+        <div class="flex justify-between items-center mb-3">
+          <h4 class="font-bold text-gray-800 text-lg"><i class="fa-solid fa-comment-dots mr-2 text-pink-600"></i>ตั้งค่าข้อเสนอแนะรายหัวข้อ</h4>
+          <button onclick="toggleCommentSettings()" class="text-gray-400 hover:text-red-500 transition"><i class="fa-solid fa-xmark text-xl"></i></button>
+        </div>
+        <p class="text-xs text-gray-500 mb-4">เปิด/ปิดการบังคับกรอกข้อเสนอแนะแต่ละหัวข้อ</p>
+        <div id="comment-settings-list" class="space-y-3 mb-4"></div>
+        <div class="flex gap-3 mt-4">
+          <button onclick="saveCommentSettings()" class="flex-1 bg-pink-600 hover:bg-pink-700 text-white py-2.5 rounded-lg font-bold shadow">
+            <i class="fa-solid fa-floppy-disk mr-2"></i> บันทึกการตั้งค่า
+          </button>
+          <button onclick="toggleCommentSettings()" class="text-sm text-gray-500 hover:text-gray-700 px-4 py-2.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition">
+            ยกเลิก
+          </button>
+        </div>
       </div>
 
       <!-- Criteria Editor Panel -->

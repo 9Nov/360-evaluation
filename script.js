@@ -22,10 +22,10 @@ let state = {
    evaluations: [],
    targetEvaluatee: null,
    currentScores: [],
-   currentComments: [],   // one comment string per criterion
+   currentComments: [],    // one comment string per criterion
    roomCriteria: null,    // null = use default evaluationCriteria
    activityName: '',      // display name for this room's activity
-   requireComment: false  // admin-controlled: are comments mandatory?
+   requireComments: []    // per-question array: true = mandatory comment for that question
 };
 
 let tempCriteria = []; // working copy inside the criteria editor
@@ -157,15 +157,14 @@ async function createRoom() {
       state.roomCode = randCode;
       state.roomCriteria = null;
       state.activityName = '';
-      state.requireComment = false;
+      state.requireComments = [];
       document.getElementById('display-room-code').innerText = randCode;
       document.getElementById('admin-activity-name').value = '';
-      document.getElementById('require-comment-toggle').checked = false;
-      updateRequireCommentLabel(false);
       document.getElementById('admin-room-info').classList.remove('hidden');
       document.getElementById('admin-users-panel').classList.add('hidden');
       document.getElementById('admin-eval-monitor').classList.add('hidden');
       document.getElementById('admin-criteria-panel').classList.add('hidden');
+      document.getElementById('admin-comment-panel').classList.add('hidden');
       await renderRoomHistory();
    }
 }
@@ -188,30 +187,96 @@ async function saveActivityName() {
    }
 }
 
-async function saveRequireComment(checked) {
-   if (!state.roomCode) {
-      // No room loaded yet — just update UI
-      updateRequireCommentLabel(checked);
-      return;
-   }
-   const res = await callAPI("updateRoomSettings", { roomCode: state.roomCode, requireComment: checked });
-   if (res && res.status === "success") {
-      state.requireComment = checked;
-      updateRequireCommentLabel(checked);
+function toggleCommentSettings() {
+   const panel = document.getElementById('admin-comment-panel');
+   if (panel.classList.contains('hidden')) {
+      panel.classList.remove('hidden');
+      renderCommentSettings();
    } else {
-      // Revert toggle on error
-      document.getElementById('require-comment-toggle').checked = !checked;
-      alert("เกิดข้อผิดพลาด: " + (res && res.message ? res.message : "ไม่สามารถบันทึกได้"));
+      panel.classList.add('hidden');
    }
 }
 
-function updateRequireCommentLabel(required) {
-   const label = document.getElementById('require-comment-label');
-   if (!label) return;
-   if (required) {
-      label.innerHTML = '<i class="fa-solid fa-circle text-red-500 mr-1 text-xs"></i> <span class="text-red-600 font-bold">บังคับกรอกข้อเสนอแนะ</span>';
+function renderCommentSettings() {
+   const container = document.getElementById('comment-settings-list');
+   container.innerHTML = '';
+   const criteria = getActiveCriteria();
+
+   // Sync array length to current criteria count
+   while (state.requireComments.length < criteria.length) state.requireComments.push(false);
+   state.requireComments = state.requireComments.slice(0, criteria.length);
+
+   criteria.forEach((crit, index) => {
+      const required = state.requireComments[index] === true;
+
+      const row = document.createElement('div');
+      row.className = 'flex items-center justify-between bg-gray-50 border border-gray-200 rounded-xl p-3 gap-3';
+
+      // Left: index badge + title
+      const left = document.createElement('div');
+      left.className = 'flex items-center gap-2 flex-1 min-w-0';
+      left.innerHTML = `
+         <span class="text-xs font-bold text-gray-400 bg-gray-200 px-2 py-0.5 rounded flex-shrink-0">${index + 1}</span>
+         <span class="text-sm font-semibold text-gray-700 truncate">${escapeHtml(crit.title.replace(/^\d+\.\s*/, ''))}</span>`;
+
+      // Right: ไม่บังคับ — toggle — บังคับ
+      const right = document.createElement('div');
+      right.className = 'flex items-center gap-2 flex-shrink-0';
+
+      const optLabel = document.createElement('span');
+      optLabel.className = `text-xs font-medium transition ${!required ? 'text-gray-700' : 'text-gray-300'}`;
+      optLabel.textContent = 'ไม่บังคับ';
+
+      const toggleWrap = document.createElement('label');
+      toggleWrap.className = 'relative inline-flex items-center cursor-pointer';
+
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.className = 'sr-only peer';
+      input.checked = required;
+      input.addEventListener('change', (e) => {
+         state.requireComments[index] = e.target.checked;
+         renderCommentSettings(); // re-render to update label colours
+      });
+
+      const slider = document.createElement('div');
+      slider.className = [
+         'w-11 h-6 rounded-full bg-gray-200',
+         "after:content-[''] after:absolute after:top-[2px] after:left-[2px]",
+         'after:bg-white after:border-gray-300 after:border after:rounded-full',
+         'after:h-5 after:w-5 after:transition-all',
+         'peer peer-checked:bg-red-500 peer-checked:after:translate-x-full peer-checked:after:border-white'
+      ].join(' ');
+
+      toggleWrap.appendChild(input);
+      toggleWrap.appendChild(slider);
+
+      const reqLabel = document.createElement('span');
+      reqLabel.className = `text-xs font-medium transition ${required ? 'text-red-600 font-bold' : 'text-gray-300'}`;
+      reqLabel.textContent = 'บังคับ';
+
+      right.appendChild(optLabel);
+      right.appendChild(toggleWrap);
+      right.appendChild(reqLabel);
+
+      row.appendChild(left);
+      row.appendChild(right);
+      container.appendChild(row);
+   });
+}
+
+async function saveCommentSettings() {
+   if (!state.roomCode) return;
+   const criteria = getActiveCriteria();
+   // Ensure array matches criteria length before saving
+   const requireComments = criteria.map((_, i) => state.requireComments[i] === true);
+   const res = await callAPI("updateRoomSettings", { roomCode: state.roomCode, requireComments });
+   if (res && res.status === "success") {
+      state.requireComments = requireComments;
+      document.getElementById('admin-comment-panel').classList.add('hidden');
+      alert("บันทึกการตั้งค่าข้อเสนอแนะเรียบร้อยแล้ว");
    } else {
-      label.innerHTML = '<i class="fa-solid fa-circle text-gray-300 mr-1 text-xs"></i> ไม่บังคับกรอกข้อเสนอแนะ';
+      alert("เกิดข้อผิดพลาด: " + (res && res.message ? res.message : "ไม่สามารถบันทึกได้"));
    }
 }
 
@@ -270,15 +335,14 @@ async function revisitRoom(code) {
    document.getElementById('admin-users-panel').classList.add('hidden');
    document.getElementById('admin-eval-monitor').classList.add('hidden');
    document.getElementById('admin-criteria-panel').classList.add('hidden');
-   // Load room data (criteria + activityName) for the admin panel
+   document.getElementById('admin-comment-panel').classList.add('hidden');
+   // Load room data (criteria + activityName + requireComments) for the admin panel
    const res = await callAPI("getRoomData", { roomCode: code });
    if (res && res.status === "success") {
       state.roomCriteria   = res.criteria || null;
       state.activityName   = res.activityName || '';
-      state.requireComment = res.requireComment === true;
+      state.requireComments = Array.isArray(res.requireComments) ? res.requireComments : [];
       document.getElementById('admin-activity-name').value = state.activityName;
-      document.getElementById('require-comment-toggle').checked = state.requireComment;
-      updateRequireCommentLabel(state.requireComment);
    }
    window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -731,11 +795,11 @@ async function doJoinRoom(roomCode, userName, pin, pinGroup) {
 async function fetchRoomData() {
    const res = await callAPI("getRoomData", { roomCode: state.roomCode });
    if (res && res.status === "success") {
-      state.usersInRoom    = res.users;
-      state.evaluations    = res.evaluations;
-      state.roomCriteria   = res.criteria || null;
-      state.activityName   = res.activityName || '';
-      state.requireComment = res.requireComment === true;
+      state.usersInRoom     = res.users;
+      state.evaluations     = res.evaluations;
+      state.roomCriteria    = res.criteria || null;
+      state.activityName    = res.activityName || '';
+      state.requireComments = Array.isArray(res.requireComments) ? res.requireComments : [];
       if (state.userName && state.userName !== "Admin") renderLobby();
    }
 }
@@ -821,12 +885,13 @@ function renderQuestions() {
    const container = document.getElementById('eval-questions-container');
    container.innerHTML = '';
 
-   const isRequired   = state.requireComment;
-   const placeholder  = isRequired ? 'ข้อเสนอแนะ (จำเป็นต้องกรอก)' : 'ข้อเสนอแนะ (ไม่บังคับ)';
-   const borderCls    = isRequired ? 'border-red-300 focus:ring-red-300' : 'border-gray-200 focus:ring-blue-200';
-   const requiredMark = isRequired ? '<span class="text-red-500 ml-0.5">*</span>' : '';
-
    getActiveCriteria().forEach((crit, index) => {
+      // Per-question required flag
+      const isRequired   = state.requireComments[index] === true;
+      const placeholder  = isRequired ? 'ข้อเสนอแนะ (จำเป็นต้องกรอก)' : 'ข้อเสนอแนะ (ไม่บังคับ)';
+      const borderCls    = isRequired ? 'border-red-300 focus:ring-red-300' : 'border-gray-200 focus:ring-blue-200';
+      const requiredMark = isRequired ? '<span class="text-red-500 ml-0.5">*</span>' : '';
+
       const div = document.createElement('div');
       div.className = "mb-6 pb-6 border-b border-gray-100 last:border-0";
 
@@ -870,8 +935,9 @@ function updateComment(index, value) {
 
 function checkAllScores() {
    const allScored    = state.currentScores.every(s => s > 0);
-   const allCommented = !state.requireComment ||
-                        state.currentComments.every(c => c.trim() !== '');
+   const allCommented = state.currentComments.every((c, i) =>
+      state.requireComments[i] !== true || c.trim() !== ''
+   );
    const allFilled    = allScored && allCommented;
    const btn = document.getElementById('btn-submit-eval');
    if (allFilled) {
@@ -885,9 +951,9 @@ function checkAllScores() {
 
 async function submitEvaluation(e) {
    e.preventDefault();
-   // Final guard: re-validate comments if required (defensive, button should already be disabled)
-   if (state.requireComment && state.currentComments.some(c => !c.trim())) {
-      alert('กรุณากรอกข้อเสนอแนะให้ครบทุกข้อ');
+   // Final guard: re-validate per-question required comments (defensive)
+   if (state.currentComments.some((c, i) => state.requireComments[i] === true && !c.trim())) {
+      alert('กรุณากรอกข้อเสนอแนะให้ครบในหัวข้อที่บังคับกรอก');
       return;
    }
    const res = await callAPI("submitEvaluation", {
