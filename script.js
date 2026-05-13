@@ -1117,6 +1117,7 @@ function calculateResults() {
    const avgContainer = document.getElementById('result-avg-container');
    avgContainer.style.display = '';
    document.getElementById('admin-summary-container').classList.add('hidden');
+   document.getElementById('user-suggestions-container').classList.add('hidden');
 
    const myEvals = state.evaluations.filter(e => e.evaluatee === state.userName);
 
@@ -1166,6 +1167,78 @@ function calculateResults() {
    }
    document.getElementById('result-total-score').innerText = totalScoreAll;
    document.getElementById('result-max-score').innerText = myEvals.length * criteria.length * 5;
+
+   // Show anonymous suggestion summary below scores
+   renderUserSuggestions();
+}
+
+// ── Anonymous suggestion summary for regular users ────────────────────
+function renderUserSuggestions() {
+   const container = document.getElementById('user-suggestions-container');
+   if (!container) return;
+
+   const criteria  = getActiveCriteria();
+   const myEvals   = state.evaluations.filter(ev => ev.evaluatee === state.userName);
+
+   // Group non-empty comments by criteria index
+   const grouped = {};
+   myEvals.forEach(ev => {
+      if (!Array.isArray(ev.comments)) return;
+      ev.comments.forEach((comment, qi) => {
+         const text = (comment || '').trim();
+         if (!text) return;
+         if (!grouped[qi]) grouped[qi] = [];
+         grouped[qi].push(text);
+      });
+   });
+
+   container.innerHTML = '';
+   container.classList.remove('hidden');
+
+   // Section header
+   const header = document.createElement('h3');
+   header.className = 'font-bold text-lg text-gray-800 mb-4 border-b pb-2 mt-8';
+   header.innerHTML = '<i class="fa-solid fa-comment-dots text-pink-500 mr-2"></i>ข้อเสนอแนะที่คุณได้รับ';
+   container.appendChild(header);
+
+   // Filter criteria that have at least one comment
+   const critWithComments = criteria
+      .map((crit, qi) => ({ crit, qi, items: grouped[qi] || [] }))
+      .filter(({ items }) => items.length > 0);
+
+   if (critWithComments.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'text-gray-400 text-sm text-center py-6 bg-gray-50 rounded-xl';
+      empty.textContent = 'ยังไม่มีข้อเสนอแนะสำหรับคุณ';
+      container.appendChild(empty);
+      return;
+   }
+
+   const grid = document.createElement('div');
+   grid.className = 'space-y-3 mb-8';
+
+   critWithComments.forEach(({ crit, items }) => {
+      const card = document.createElement('div');
+      card.className = 'bg-white border border-pink-100 rounded-xl p-4 shadow-sm';
+
+      const critTitle = document.createElement('h4');
+      critTitle.className = 'font-bold text-gray-800 text-sm mb-3 flex items-center gap-2';
+      critTitle.innerHTML = `<i class="fa-solid fa-comment-dots text-pink-400"></i> ${escapeHtml(crit.title.replace(/^\d+\.\s*/, ''))}`;
+      card.appendChild(critTitle);
+
+      const list = document.createElement('ul');
+      list.className = 'space-y-1.5';
+      items.forEach(comment => {
+         const li = document.createElement('li');
+         li.className = 'flex items-start gap-2 text-sm text-gray-700';
+         li.innerHTML = `<span class="text-pink-400 mt-0.5 flex-shrink-0 font-bold">•</span><span class="italic">"${escapeHtml(comment)}"</span>`;
+         list.appendChild(li);
+      });
+      card.appendChild(list);
+      grid.appendChild(card);
+   });
+
+   container.appendChild(grid);
 }
 
 // ── Admin member-summary with expandable raw-score tables ─────────────
@@ -1193,22 +1266,25 @@ function renderAdminSummary() {
 
    // ── Tab bar ──────────────────────────────────────────────────────
    const tabDefs = [
-      { id: 'rank',    label: '👑 สรุป Ranking' },
-      { id: 'avg',     label: '📊 สรุปคะแนนเฉลี่ย' },
-      { id: 'allAvg',  label: '📋 สรุปผลเฉลี่ยทุกสมาชิก' },
-      { id: 'members', label: '👥 สรุปผลทุกสมาชิก' }
+      { id: 'rank',        label: '👑 สรุป Ranking' },
+      { id: 'avg',         label: '📊 สรุปคะแนนเฉลี่ย' },
+      { id: 'allAvg',      label: '📋 สรุปผลเฉลี่ยทุกสมาชิก' },
+      { id: 'members',     label: '👥 สรุปผลทุกสมาชิก' },
+      { id: 'suggestions', label: '💬 สรุปข้อเสนอแนะ' }
    ];
 
    const tabBar = document.createElement('div');
    tabBar.className = 'flex flex-wrap rounded-xl overflow-hidden border border-gray-200 mb-5 shadow-sm';
 
-   const rankPanel    = document.createElement('div');
-   const avgPanel     = document.createElement('div');
-   const allAvgPanel  = document.createElement('div');
-   const memberPanel  = document.createElement('div');
+   const rankPanel        = document.createElement('div');
+   const avgPanel         = document.createElement('div');
+   const allAvgPanel      = document.createElement('div');
+   const memberPanel      = document.createElement('div');
+   const suggestionsPanel = document.createElement('div');
    avgPanel.classList.add('hidden');
    allAvgPanel.classList.add('hidden');
    memberPanel.classList.add('hidden');
+   suggestionsPanel.classList.add('hidden');
 
    const setTabStyles = (activeId) => {
       tabBtns.forEach((btn, i) => {
@@ -1216,10 +1292,11 @@ function renderAdminSummary() {
          btn.className = `flex-1 py-2.5 text-sm font-semibold transition ${
             isActive ? 'bg-blue-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`;
       });
-      rankPanel.classList.toggle('hidden',   activeId !== 'rank');
-      avgPanel.classList.toggle('hidden',    activeId !== 'avg');
-      allAvgPanel.classList.toggle('hidden', activeId !== 'allAvg');
-      memberPanel.classList.toggle('hidden', activeId !== 'members');
+      rankPanel.classList.toggle('hidden',        activeId !== 'rank');
+      avgPanel.classList.toggle('hidden',         activeId !== 'avg');
+      allAvgPanel.classList.toggle('hidden',      activeId !== 'allAvg');
+      memberPanel.classList.toggle('hidden',      activeId !== 'members');
+      suggestionsPanel.classList.toggle('hidden', activeId !== 'suggestions');
    };
 
    // Build buttons first (referenced in setTabStyles)
@@ -1629,6 +1706,128 @@ function renderAdminSummary() {
    });
 
    container.appendChild(memberPanel);
+
+   // ── Tab 5: Full suggestion summary (admin view) ───────────────────
+   (() => {
+      const sugTitle = document.createElement('h3');
+      sugTitle.className = 'font-bold text-lg text-gray-800 mb-4 border-b pb-2';
+      sugTitle.textContent = '💬 สรุปข้อเสนอแนะทั้งหมด';
+      suggestionsPanel.appendChild(sugTitle);
+
+      // Pre-compute suggestion map: { member → { qi → [{evaluator, comment}] } }
+      const suggestionMap = {};
+      members.forEach(m => { suggestionMap[m] = {}; });
+      state.evaluations.forEach(ev => {
+         if (!Array.isArray(ev.comments)) return;
+         if (!suggestionMap[ev.evaluatee]) return;
+         ev.comments.forEach((comment, qi) => {
+            const text = (comment || '').trim();
+            if (!text) return;
+            if (!suggestionMap[ev.evaluatee][qi]) suggestionMap[ev.evaluatee][qi] = [];
+            suggestionMap[ev.evaluatee][qi].push({ evaluator: ev.evaluator, comment: text });
+         });
+      });
+
+      // Filter dropdown
+      const filterWrap = document.createElement('div');
+      filterWrap.className = 'mb-5 flex items-center gap-3';
+
+      const filterLabel = document.createElement('label');
+      filterLabel.className = 'text-sm font-semibold text-gray-600 whitespace-nowrap';
+      filterLabel.textContent = 'กรองตามผู้ถูกประเมิน:';
+
+      const select = document.createElement('select');
+      select.className = 'flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300';
+      select.innerHTML = `<option value="">— ทั้งหมด —</option>` +
+         members.map(m => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('');
+
+      filterWrap.appendChild(filterLabel);
+      filterWrap.appendChild(select);
+      suggestionsPanel.appendChild(filterWrap);
+
+      // Scrollable content area
+      const sugContent = document.createElement('div');
+      sugContent.className = 'space-y-4';
+      suggestionsPanel.appendChild(sugContent);
+
+      const renderSugContent = (filterMember) => {
+         sugContent.innerHTML = '';
+         const toShow = filterMember ? [filterMember] : members;
+         let anyContent = false;
+
+         toShow.forEach(member => {
+            const memberSugs = suggestionMap[member] || {};
+            // Criteria that have at least one comment for this member
+            const critWithComments = criteria
+               .map((crit, qi) => ({ crit, qi, items: memberSugs[qi] || [] }))
+               .filter(({ items }) => items.length > 0);
+
+            const card = document.createElement('div');
+            card.className = 'border border-gray-200 rounded-xl overflow-hidden shadow-sm';
+
+            // Card header
+            const cardHead = document.createElement('div');
+            const totalCount = critWithComments.reduce((s, { items }) => s + items.length, 0);
+            cardHead.className = 'bg-indigo-50 border-b border-indigo-100 px-4 py-3 flex items-center gap-2';
+            cardHead.innerHTML = `
+               <i class="fa-solid fa-user text-indigo-500 flex-shrink-0"></i>
+               <span class="font-bold text-indigo-800">${escapeHtml(member)}</span>
+               <span class="ml-auto text-xs text-indigo-400 bg-indigo-100 px-2 py-0.5 rounded-full">${totalCount} ข้อเสนอแนะ</span>`;
+            card.appendChild(cardHead);
+
+            if (critWithComments.length === 0) {
+               const empty = document.createElement('p');
+               empty.className = 'text-gray-400 text-sm text-center py-4 px-4';
+               empty.textContent = 'ไม่มีข้อเสนอแนะ';
+               card.appendChild(empty);
+            } else {
+               anyContent = true;
+               const body = document.createElement('div');
+               body.className = 'divide-y divide-gray-100';
+
+               critWithComments.forEach(({ crit, qi, items }) => {
+                  const section = document.createElement('div');
+                  section.className = 'px-4 py-3';
+
+                  const critTitle = document.createElement('p');
+                  critTitle.className = 'text-xs font-bold text-gray-500 uppercase tracking-wide mb-2';
+                  critTitle.textContent = `${qi + 1}. ${crit.title.replace(/^\d+\.\s*/, '')}`;
+                  section.appendChild(critTitle);
+
+                  items.forEach(({ evaluator, comment }) => {
+                     const row = document.createElement('div');
+                     row.className = 'flex items-start gap-2 mb-1.5';
+
+                     const badge = document.createElement('span');
+                     badge.className = 'text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-semibold whitespace-nowrap flex-shrink-0 mt-0.5';
+                     badge.textContent = evaluator;
+
+                     const text = document.createElement('span');
+                     text.className = 'text-sm text-gray-700 italic';
+                     text.textContent = `"${comment}"`;
+
+                     row.appendChild(badge);
+                     row.appendChild(text);
+                     section.appendChild(row);
+                  });
+
+                  body.appendChild(section);
+               });
+               card.appendChild(body);
+            }
+
+            sugContent.appendChild(card);
+         });
+
+         if (!anyContent) {
+            sugContent.innerHTML = '<p class="text-gray-400 text-center py-8">ไม่มีข้อเสนอแนะในห้องนี้</p>';
+         }
+      };
+
+      select.addEventListener('change', () => renderSugContent(select.value));
+      renderSugContent('');
+      container.appendChild(suggestionsPanel);
+   })();
 }
 
 function toggleMemberDetail(idx) {
